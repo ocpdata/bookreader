@@ -5,13 +5,19 @@ variable "aws_region" {
 }
 
 variable "allowed_cidr_blocks" {
-  description = "IPs (CIDR) con acceso a SSH, HTTP y HTTPS de la VM. Usa tu IP /32 hasta que exista el login."
+  description = "IPs (CIDR) con acceso a SSH y HTTPS de la VM. Usa tu IP /32 hasta que exista el login."
   type        = list(string)
 
   validation {
     condition     = length(var.allowed_cidr_blocks) > 0 && !contains(var.allowed_cidr_blocks, "0.0.0.0/0")
     error_message = "allowed_cidr_blocks no puede estar vacío ni abrirse a 0.0.0.0/0 mientras la app no tenga login."
   }
+}
+
+variable "http_cidr_blocks" {
+  description = "IPs (CIDR) con acceso al puerto 80. Debe ser público para que Let's Encrypt valide y renueve; Nginx solo valida y redirige a HTTPS ahí."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "ssh_public_key" {

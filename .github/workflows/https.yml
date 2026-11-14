@@ -1,0 +1,131 @@
+name: https
+
+# Manual: configura HTTPS con Let's Encrypt en la VM (dominio en la variable APP_DOMAIN).
+# Orden: 1) stage=prepare  2) workflow infra con apply=true (abre el puerto 80)  3) stage=issue
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "prepare = Nginx solo valida/redirige en el 80; issue = emite el certificado y activa el 443"
+        type: choice
+        options:
+          - prepare
+          - issue
+        default: prepare
+
+permissions:
+  contents: read
+
+concurrency:
+  group: https-bookreader
+  cancel-in-progress: false
+
+jobs:
+  https:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.TFC_TOKEN }}
+      SSH_KEY_PEM: ${{ secrets.SSH_KEY_PEM }}
+      APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
+      STAGE: ${{ inputs.stage }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required variables and secrets
+        run: |
+          missing=0
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION TF_TOKEN_app_terraform_io \
+            SSH_KEY_PEM APP_DOMAIN LETSENCRYPT_EMAIL; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Falta la variable o el secret requerido: ${name}"
+              missing=1
+            fi
+          done
+          [[ "$missing" -eq 0 ]]
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Resolve VM data from Terraform state
+        working-directory: infra
+        run: |
+          terraform init -input=false
+          for out in public_ip web_security_group_id; do
+            value="$(terraform output -raw "$out" 2>/dev/null || true)"
+            if [[ -z "$value" ]]; then
+              echo "::error::No hay output '${out}' en el estado. Ejecuta primero el workflow 'infra' con apply=true."
+              exit 1
+            fi
+            echo "$(echo "$out" | tr '[:lower:]' '[:upper:]')=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: Check DNS points to the VM
+        if: ${{ inputs.stage == 'issue' }}
+        run: |
+          resolved="$(getent ahostsv4 "$APP_DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+          echo "${APP_DOMAIN} -> ${resolved} (VM: ${PUBLIC_IP})"
+          if [[ "$resolved" != "${PUBLIC_IP} " ]]; then
+            echo "::error::${APP_DOMAIN} no apunta solo a ${PUBLIC_IP}. Corrige el registro A antes de emitir el certificado."
+            exit 1
+          fi
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$SSH_KEY_PEM" > ~/.ssh/bookreader_deploy
+          chmod 600 ~/.ssh/bookreader_deploy
+
+      - name: Allow SSH from this runner
+        run: |
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          echo "RUNNER_CIDR=${runner_ip}/32" >> "$GITHUB_ENV"
+          if out="$(aws ec2 authorize-security-group-ingress --group-id "$WEB_SECURITY_GROUP_ID" \
+            --protocol tcp --port 22 --cidr "${runner_ip}/32" 2>&1)"; then
+            echo "RUNNER_RULE_OPENED=true" >> "$GITHUB_ENV"
+          elif grep -q "InvalidPermission.Duplicate" <<<"$out"; then
+            echo "La regla ya existía; se deja como estaba."
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
+      - name: Configure HTTPS on the VM
+        run: |
+          # El usuario ubuntu (con sudo) es el único que puede instalar paquetes y editar Nginx.
+          ssh_opts=(-i ~/.ssh/bookreader_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+          for _ in $(seq 1 30); do
+            ssh "${ssh_opts[@]}" "ubuntu@${PUBLIC_IP}" true 2>/dev/null && break
+            echo "Esperando acceso SSH..."
+            sleep 10
+          done
+          scp "${ssh_opts[@]}" scripts/setup_https.sh "ubuntu@${PUBLIC_IP}:/tmp/setup_https.sh"
+          ssh "${ssh_opts[@]}" "ubuntu@${PUBLIC_IP}" \
+            "sudo bash /tmp/setup_https.sh '${STAGE}' '${APP_DOMAIN}' '${LETSENCRYPT_EMAIL}'; status=\$?; rm -f /tmp/setup_https.sh; exit \$status"
+
+      - name: Close SSH for this runner
+        if: ${{ always() && env.RUNNER_RULE_OPENED == 'true' }}
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "$WEB_SECURITY_GROUP_ID" \
+            --protocol tcp --port 22 --cidr "$RUNNER_CIDR"
+
+      - name: Summary
+        run: |
+          {
+            echo "### HTTPS: etapa ${STAGE} completada"
+            echo
+            if [[ "$STAGE" == "prepare" ]]; then
+              echo "Siguiente paso: workflow \`infra\` con apply=true (abre el puerto 80) y luego este workflow con stage=issue."
+            else
+              echo "- URL: https://${APP_DOMAIN} (443 y 22 siguen limitados a las IP permitidas)"
+              echo "- Siguiente paso: variable \`APP_ORIGIN=https://${APP_DOMAIN}\` y ejecutar \`deploy\` para actualizar el CORS del bucket."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

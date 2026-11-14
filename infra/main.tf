@@ -122,7 +122,7 @@ resource "aws_security_group" "web" {
 
 resource "aws_vpc_security_group_ingress_rule" "web" {
   for_each = {
-    for pair in setproduct([22, 80, 443], var.allowed_cidr_blocks) :
+    for pair in setproduct([22, 443], var.allowed_cidr_blocks) :
     "${pair[0]}-${pair[1]}" => { port = pair[0], cidr = pair[1] }
   }
 
@@ -131,6 +131,18 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
   from_port         = each.value.port
   to_port           = each.value.port
   cidr_ipv4         = each.value.cidr
+}
+
+# Puerto 80 abierto a Internet: Let's Encrypt valida desde IP que no publica y la renovación
+# usa el mismo canal. Nginx solo atiende ahí la validación y la redirección a HTTPS.
+resource "aws_vpc_security_group_ingress_rule" "http" {
+  for_each = toset(var.http_cidr_blocks)
+
+  security_group_id = aws_security_group.web.id
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = each.value
 }
 
 resource "aws_vpc_security_group_egress_rule" "web_all" {
