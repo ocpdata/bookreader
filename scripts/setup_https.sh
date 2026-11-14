@@ -56,8 +56,18 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    # Archivos con hash en el nombre (Vite): nunca cambian, se cachean por mucho tiempo.
+    location /assets/ {
+        try_files \$uri =404;
+        # Sin "always": un 404 no debe quedar cacheado como inmutable.
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # index.html y el resto de la raíz: el navegador siempre revalida, así un despliegue nuevo
+    # se ve de inmediato (index.html apunta a los assets con hash del release activo).
     location / {
         try_files \$uri /index.html;
+        add_header Cache-Control "no-cache" always;
     }
 }
 EOF
