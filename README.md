@@ -27,12 +27,12 @@ npm run start:dev                         # http://127.0.0.1:3000/api
 
 cd ../frontend                            # en otra terminal
 npm install
-npm run dev                               # http://localhost:5173
+npm run dev                               # http://localhost:5500
 ```
 
 ### CORS del bucket (una sola vez)
 
-La carga desde el navegador requiere CORS para `http://localhost:5173`:
+La carga desde el navegador requiere CORS para `http://localhost:5500`:
 
 ```bash
 aws s3api put-bucket-cors --bucket <tu-bucket> --cors-configuration file://backend/s3-cors.json
