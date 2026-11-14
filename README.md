@@ -53,3 +53,11 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{uuid}/audio.ext`.
+
+## Infraestructura (`infra/`)
+
+Terraform para AWS, independiente de cualquier otra app. El estado vive en el workspace `bookreader` de la organización `OCPData` en Terraform Cloud (modo de ejecución **Local**).
+
+Crea: VPC `10.91.0.0/16`, una VM Ubuntu 24.04 `t3.small` con Elastic IP (Nginx, Node 20, servicio `bookreader-api`), una RDS MySQL 8.4 `db.t4g.micro` privada de 20 GB (sin escalado automático) y un rol de IAM con acceso mínimo al bucket de audios.
+
+Seguridad: SSH, HTTP y HTTPS solo desde `allowed_cidr_blocks` (Terraform rechaza `0.0.0.0/0`). Se abrirá al público cuando exista el login. Las variables van en un `terraform.tfvars` local (ver `terraform.tfvars.example`), que no se versiona.

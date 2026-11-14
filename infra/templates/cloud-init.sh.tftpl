@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Arranque de la VM de BookReader (se ejecuta una sola vez con cloud-init).
+set -euxo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+exec > >(tee -a /var/log/bookreader-bootstrap.log) 2>&1
+
+apt-get update -y
+apt-get install -y nginx curl ca-certificates gnupg mysql-client
+
+# Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# Swap de 1 GB como colchón de memoria
+if [ ! -f /swapfile ]; then
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# Usuarios: deployer (despliega por SSH) y bookreader (ejecuta la API sin sudo)
+id deployer >/dev/null 2>&1 || useradd -m -s /bin/bash deployer
+id bookreader >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin -g deployer bookreader
+
+install -d -m 700 -o deployer -g deployer /home/deployer/.ssh
+echo "${ssh_public_key}" > /home/deployer/.ssh/authorized_keys
+chmod 600 /home/deployer/.ssh/authorized_keys
+chown deployer:deployer /home/deployer/.ssh/authorized_keys
+
+# deployer solo puede reiniciar la API y recargar Nginx
+cat > /etc/sudoers.d/deployer <<'EOF'
+deployer ALL=(root) NOPASSWD: /usr/bin/systemctl restart bookreader-api, /usr/bin/systemctl status bookreader-api, /usr/bin/systemctl reload nginx, /usr/sbin/nginx -t
+EOF
+chmod 440 /etc/sudoers.d/deployer
+visudo -cf /etc/sudoers.d/deployer
+
+# Directorios de la aplicación
+install -d -m 750 -o deployer -g deployer /var/app/bookreader /var/app/bookreader/releases /var/app/bookreader/shared
+
+# Servicio systemd de la API
+cat > /etc/systemd/system/bookreader-api.service <<'EOF'
+[Unit]
+Description=BookReader API
+After=network.target
+
+[Service]
+User=bookreader
+Group=deployer
+WorkingDirectory=/var/app/bookreader/current/backend
+EnvironmentFile=/var/app/bookreader/shared/api.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable bookreader-api
+
+# Nginx: frontend estático y proxy de /api hacia el backend (solo escucha en 127.0.0.1)
+cat > /etc/nginx/sites-available/bookreader <<'EOF'
+server {
+    listen 80 default_server;
+    server_name _;
+
+    root /var/app/bookreader/current/frontend/dist;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}
+EOF
+ln -sfn /etc/nginx/sites-available/bookreader /etc/nginx/sites-enabled/bookreader
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx
+systemctl restart nginx
+
+touch /var/lib/bookreader-bootstrap-done

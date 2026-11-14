@@ -1,0 +1,4 @@
+allowed_cidr_blocks = ["203.0.113.10/32"] # tu IP pública
+ssh_public_key      = "ssh-ed25519 AAAA... deployer@bookreader"
+db_username         = "bookreader_admin"
+db_password         = "cambia-esto"
