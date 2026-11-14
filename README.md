@@ -51,6 +51,7 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | POST | `/api/summaries/:id/complete` | Verificar el objeto en S3 y marcar `READY` |
 | PATCH | `/api/summaries/:id` | Editar título, autor, categoría y descripción |
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
+| GET | `/api/health` | Estado de la API y de la base de datos |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{uuid}/audio.ext`.
 
@@ -63,3 +64,19 @@ Crea: VPC `10.91.0.0/16`, una VM Ubuntu 24.04 `t3.small` con Elastic IP (Nginx, 
 Red: los rangos se definen como variables de Actions (`VPC_CIDR`, `PUBLIC_SUBNET_CIDR`, `PRIVATE_SUBNET_1_CIDR`, `PRIVATE_SUBNET_2_CIDR`; hoy `10.91.x`) y no tienen valor por defecto. Terraform rechaza el plan si se solapan con NewPeople (`10.90.0.0/16`) o con la VPC por defecto (`172.31.0.0/16`), o si las subredes quedan fuera de la VPC o se solapan entre sí. **No los cambies una vez creada la red**: obligaría a reemplazar la VPC, las subredes y la VM.
 
 Seguridad: SSH, HTTP y HTTPS solo desde `allowed_cidr_blocks` (Terraform rechaza `0.0.0.0/0`). Se abrirá al público cuando exista el login. Las variables van en un `terraform.tfvars` local (ver `terraform.tfvars.example`), que no se versiona.
+
+## Despliegue (GitHub Actions, siempre manual)
+
+Los dos workflows son `workflow_dispatch`: ninguno se ejecuta solo con un `push`. Se lanzan desde la pestaña **Actions**.
+
+1. **`infra`**: Terraform sobre `infra/`. Ejecútalo primero con `apply=false`, revisa el plan en el resumen del job y luego con `apply=true`.
+2. **`deploy`**: compila backend y frontend en GitHub, empaqueta un release, lo envía por SSH a la VM y lo activa (con migraciones de Prisma opcionales). El release queda en `/var/app/bookreader/releases/<id>`, `current` apunta al activo y se conservan los últimos 5. Si el healthcheck falla, vuelve al release anterior.
+
+Durante el despliegue, el workflow abre el puerto 22 solo a la IP del runner y lo cierra siempre al terminar, ya que el Security Group solo permite tu IP.
+
+**Variables** (Settings → Secrets and variables → Actions → Variables): `AWS_REGION`, `TFC_ORG`, `TFC_WORKSPACE`, `INSTANCE_TYPE`, `ALLOWED_CIDR_BLOCKS` (JSON, ej. `["1.2.3.4/32"]`), `VPC_CIDR`, `PUBLIC_SUBNET_CIDR`, `PRIVATE_SUBNET_1_CIDR`, `PRIVATE_SUBNET_2_CIDR`, `DB_INSTANCE_CLASS`, `DB_ENGINE_VERSION`, `DB_ALLOCATED_STORAGE`, `DB_NAME`. Opcionales: `S3_BUCKET` (por defecto `resumen-book-reader`) y `APP_ORIGIN` (dominio con HTTPS, se añade al CORS del bucket).
+
+**Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TFC_TOKEN`, `SSH_KEY_PEM`, `DB_USER`, `DB_PASSWORD`.
+
+Las credenciales de AWS necesitan permisos para Terraform (VPC, EC2, RDS, IAM), para abrir y cerrar reglas del Security Group y para `s3:PutBucketCORS` sobre el bucket. Si falta este último, el despliegue termina con una advertencia y los audios no se podrán subir desde el navegador hasta ajustar el CORS.
+

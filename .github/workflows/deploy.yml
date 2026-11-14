@@ -1,0 +1,187 @@
+name: deploy
+
+# Manual: compila BookReader en GitHub, lo empaqueta y lo despliega en la VM por SSH.
+# Requiere que el workflow `infra` ya haya creado la VM y la RDS (apply=true).
+on:
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Ejecutar migraciones de Prisma y seed de categorías"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-bookreader
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_TOKEN_app_terraform_io: ${{ secrets.TFC_TOKEN }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      SSH_KEY_PEM: ${{ secrets.SSH_KEY_PEM }}
+      TFC_ORG: ${{ vars.TFC_ORG }}
+      TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE }}
+      S3_BUCKET: ${{ vars.S3_BUCKET || 'resumen-book-reader' }}
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required variables and secrets
+        run: |
+          missing=0
+          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION TF_TOKEN_app_terraform_io \
+            DB_USER DB_PASSWORD SSH_KEY_PEM TFC_ORG TFC_WORKSPACE; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Falta la variable o el secret requerido: ${name}"
+              missing=1
+            fi
+          done
+          [[ "$missing" -eq 0 ]]
+          grep -q "organization = \"${TFC_ORG}\"" infra/versions.tf || { echo "::error::infra/versions.tf no usa la organización ${TFC_ORG}"; exit 1; }
+          grep -q "name = \"${TFC_WORKSPACE}\"" infra/versions.tf || { echo "::error::infra/versions.tf no usa el workspace ${TFC_WORKSPACE}"; exit 1; }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Build backend
+        working-directory: backend
+        run: |
+          npm ci
+          npx prisma generate
+          npm run build
+          # Solo dependencias de producción (prisma queda en dependencies para migrar en la VM).
+          npm prune --omit=dev
+          npx prisma generate
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package release
+        run: |
+          mkdir -p release/backend release/frontend
+          cp -R backend/dist backend/prisma backend/node_modules backend/package.json backend/package-lock.json release/backend/
+          cp -R frontend/dist release/frontend/dist
+          tar -czf bookreader-release.tgz -C release backend frontend
+          ls -lh bookreader-release.tgz
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Resolve VM and database data from Terraform state
+        working-directory: infra
+        run: |
+          terraform init -input=false
+          for out in public_ip db_host db_port db_name web_security_group_id; do
+            value="$(terraform output -raw "$out" 2>/dev/null || true)"
+            if [[ -z "$value" ]]; then
+              echo "::error::No hay output '${out}' en el estado. Ejecuta primero el workflow 'infra' con apply=true."
+              exit 1
+            fi
+            echo "$(echo "$out" | tr a-z A-Z)=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: Render API environment file
+        run: |
+          database_url="$(python3 - <<'PY'
+          import os, urllib.parse as u
+          q = lambda s: u.quote(s, safe="")
+          print(f"mysql://{q(os.environ['DB_USER'])}:{q(os.environ['DB_PASSWORD'])}@{os.environ['DB_HOST']}:{os.environ['DB_PORT']}/{os.environ['DB_NAME']}")
+          PY
+          )"
+          # La URL codificada difiere del secret original, así que se enmascara aparte.
+          echo "::add-mask::${database_url}"
+          umask 077
+          {
+            echo "DATABASE_URL=\"${database_url}\""
+            echo "AWS_REGION=${AWS_REGION}"
+            echo "S3_BUCKET=${S3_BUCKET}"
+            echo "PORT=3000"
+          } > "$RUNNER_TEMP/api.env"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$SSH_KEY_PEM" > ~/.ssh/bookreader_deploy
+          chmod 600 ~/.ssh/bookreader_deploy
+          echo "Huella de SSH_KEY_PEM: $(ssh-keygen -lf ~/.ssh/bookreader_deploy)"
+
+      - name: Allow SSH from this runner
+        run: |
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          echo "RUNNER_CIDR=${runner_ip}/32" >> "$GITHUB_ENV"
+          out="$(aws ec2 authorize-security-group-ingress --group-id "$WEB_SECURITY_GROUP_ID" \
+            --protocol tcp --port 22 --cidr "${runner_ip}/32" 2>&1)" && echo "RUNNER_RULE_OPENED=true" >> "$GITHUB_ENV" || {
+            if grep -q "InvalidPermission.Duplicate" <<<"$out"; then
+              echo "La regla ya existía; se deja como estaba."
+            else
+              echo "$out" >&2
+              exit 1
+            fi
+          }
+
+      - name: Deploy over SSH
+        run: |
+          ssh_opts=(-i ~/.ssh/bookreader_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+          release_id="${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+
+          for _ in $(seq 1 30); do
+            ssh "${ssh_opts[@]}" "deployer@${PUBLIC_IP}" true 2>/dev/null && break
+            echo "Esperando acceso SSH (la VM puede estar arrancando)..."
+            sleep 10
+          done
+          ssh "${ssh_opts[@]}" "deployer@${PUBLIC_IP}" true
+
+          scp "${ssh_opts[@]}" bookreader-release.tgz "deployer@${PUBLIC_IP}:/tmp/bookreader-release.tgz"
+          scp "${ssh_opts[@]}" "$RUNNER_TEMP/api.env" "deployer@${PUBLIC_IP}:/tmp/bookreader-api.env"
+          scp "${ssh_opts[@]}" scripts/deploy_remote.sh "deployer@${PUBLIC_IP}:/tmp/deploy_remote.sh"
+          ssh "${ssh_opts[@]}" "deployer@${PUBLIC_IP}" \
+            "chmod +x /tmp/deploy_remote.sh && /tmp/deploy_remote.sh /tmp/bookreader-release.tgz /tmp/bookreader-api.env ${release_id} ${{ inputs.run_migrations }}; status=\$?; rm -f /tmp/deploy_remote.sh; exit \$status"
+
+      - name: Configure S3 CORS
+        continue-on-error: true
+        run: |
+          origins="$(jq -cn --arg ip "http://${PUBLIC_IP}" --arg extra "$APP_ORIGIN" \
+            '["http://localhost:5500", $ip] + (if $extra == "" then [] else [$extra] end)')"
+          jq -n --argjson origins "$origins" '{CORSRules: [{AllowedOrigins: $origins, AllowedMethods: ["PUT","GET","HEAD"], AllowedHeaders: ["*"], ExposeHeaders: ["ETag"], MaxAgeSeconds: 3000}]}' > "$RUNNER_TEMP/cors.json"
+          if ! aws s3api put-bucket-cors --bucket "$S3_BUCKET" --cors-configuration "file://$RUNNER_TEMP/cors.json"; then
+            echo "::warning::No se pudo actualizar el CORS de ${S3_BUCKET}. Sin él, el navegador no podrá subir audios desde http://${PUBLIC_IP}."
+            exit 1
+          fi
+
+      - name: Close SSH for this runner
+        if: ${{ always() && env.RUNNER_RULE_OPENED == 'true' }}
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "$WEB_SECURITY_GROUP_ID" \
+            --protocol tcp --port 22 --cidr "$RUNNER_CIDR"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Despliegue completado"
+            echo
+            echo "- URL: http://${PUBLIC_IP} (solo accesible desde las IP permitidas)"
+            echo "- Release: ${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+          } >> "$GITHUB_STEP_SUMMARY"
