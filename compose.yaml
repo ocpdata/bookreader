@@ -1,14 +1,17 @@
 services:
   db:
-    image: postgres:16
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
     environment:
-      POSTGRES_USER: bookreader
-      POSTGRES_PASSWORD: bookreader
-      POSTGRES_DB: bookreader
+      MYSQL_ROOT_PASSWORD: bookreader
+      MYSQL_DATABASE: bookreader
     ports:
-      - "5432:5432"
+      # 3307 en el host: el 3306 suele estar ocupado por un MySQL local.
+      - "127.0.0.1:3307:3306"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
 
 volumes:
-  pgdata:
+  mysqldata:

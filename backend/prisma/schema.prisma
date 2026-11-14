@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -13,24 +13,24 @@ enum SummaryStatus {
 }
 
 model Category {
-  id        String    @id @default(uuid())
-  name      String    @unique
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  name      String    @unique @db.VarChar(100)
   summaries Summary[]
 
   @@map("categories")
 }
 
 model Summary {
-  id               String        @id @default(uuid())
-  title            String
-  author           String
-  description      String?
-  categoryId       String        @map("category_id")
+  id               String        @id @default(uuid()) @db.VarChar(36)
+  title            String        @db.VarChar(200)
+  author           String        @db.VarChar(200)
+  description      String?       @db.Text
+  categoryId       String        @map("category_id") @db.VarChar(36)
   category         Category      @relation(fields: [categoryId], references: [id])
-  s3Key            String        @unique @map("s3_key")
-  originalFilename String        @map("original_filename")
+  s3Key            String        @unique @map("s3_key") @db.VarChar(255)
+  originalFilename String        @map("original_filename") @db.VarChar(255)
   sizeBytes        Int           @map("size_bytes")
-  contentType      String        @map("content_type")
+  contentType      String        @map("content_type") @db.VarChar(100)
   status           SummaryStatus @default(PENDING)
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")

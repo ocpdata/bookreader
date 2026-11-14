@@ -4,7 +4,7 @@ Biblioteca personal de resúmenes de libros en audio (un solo usuario, uso local
 
 - **Frontend:** React + TypeScript + Vite + MUI (`frontend/`)
 - **Backend:** NestJS + Prisma (`backend/`)
-- **Base de datos:** PostgreSQL en Docker (`compose.yaml`)
+- **Base de datos:** MySQL 8.4 en Docker (`compose.yaml`, puerto local 3307)
 - **Audios:** bucket S3 privado; el navegador sube y reproduce con URLs prefirmadas temporales.
 
 > No tiene autenticación: no lo publiques en Internet. El backend solo escucha en `127.0.0.1`.
@@ -16,7 +16,7 @@ Node 20+, Docker, AWS CLI con credenciales locales (`~/.aws`) y un bucket S3 pri
 ## Puesta en marcha
 
 ```bash
-docker compose up -d                      # PostgreSQL
+docker compose up -d                      # MySQL
 cp .env.example backend/.env              # ajusta S3_BUCKET y AWS_REGION
 
 cd backend

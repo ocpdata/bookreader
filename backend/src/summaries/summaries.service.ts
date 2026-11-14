@@ -13,17 +13,14 @@ export class SummariesService {
     private readonly storage: StorageService,
   ) {}
 
-  async list({ search, categoryId }: ListSummariesQuery) {
+  list({ search, categoryId }: ListSummariesQuery) {
     const where: Prisma.SummaryWhereInput = { status: SummaryStatus.READY };
     if (categoryId) where.categoryId = categoryId;
     if (search) {
-      // Búsqueda sin distinguir mayúsculas ni acentos (extensión unaccent).
-      const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
-      const matches = await this.prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM summaries
-        WHERE unaccent(title) ILIKE unaccent(${pattern})
-           OR unaccent(author) ILIKE unaccent(${pattern})`;
-      where.id = { in: matches.map((m) => m.id) };
+      // La colación utf8mb4 de MySQL ignora mayúsculas y acentos. Prisma no escapa
+      // los comodines de LIKE, así que se escapan aquí para buscar texto literal.
+      const term = search.replace(/[\\%_]/g, '\\$&');
+      where.OR = [{ title: { contains: term } }, { author: { contains: term } }];
     }
     return this.prisma.summary.findMany({
       where,
