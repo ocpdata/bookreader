@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Se ejecuta en la VM como usuario deployer.
-# Uso: deploy_remote.sh <release.tgz> <api.env> <release_id> <run_migrations: true|false>
+# Uso: deploy_remote.sh <release.tgz> <api.env> <release_id> <run_migrations: true|false> [dominio]
+# Con dominio, el healthcheck pasa por HTTPS (443) con SNI; sin él, por HTTP (80).
 set -euo pipefail
 
 archive="$1"
 env_file="$2"
 release_id="$3"
 run_migrations="${4:-true}"
+domain="${5:-}"
 
 app_root=/var/app/bookreader
 release_root="${app_root}/releases/${release_id}"
@@ -21,7 +23,7 @@ fi
 
 rollback() {
   echo "::error::El despliegue falló; revirtiendo." >&2
-  sudo journalctl -u bookreader-api -n 40 --no-pager >&2 || true
+  sudo -n /usr/bin/systemctl status bookreader-api 2>&1 | tail -n 20 >&2 || true
   if [[ -n "$previous_release" && -d "$previous_release" ]]; then
     ln -sfn "$previous_release" "$current_link"
     sudo systemctl restart bookreader-api || true
@@ -65,11 +67,20 @@ ln -sfn "$release_root" "$current_link"
 sudo systemctl restart bookreader-api
 
 # Healthcheck local: API directa, y API y frontend estático a través de Nginx.
+# Con dominio se usa HTTPS (el 80 solo redirige): --resolve fuerza SNI hacia 127.0.0.1.
+if [[ -n "$domain" ]]; then
+  front_url="https://${domain}"
+  curl_front=(curl -fsS --resolve "${domain}:443:127.0.0.1")
+else
+  front_url="http://127.0.0.1"
+  curl_front=(curl -fsS)
+fi
+
 ok=false
 for _ in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 \
-    && curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1 \
-    && curl -fsS http://127.0.0.1/ 2>/dev/null | grep -q 'id="root"'; then
+    && "${curl_front[@]}" "${front_url}/api/health" >/dev/null 2>&1 \
+    && "${curl_front[@]}" "${front_url}/" 2>/dev/null | grep -q 'id="root"'; then
     ok=true
     break
   fi
@@ -80,7 +91,7 @@ if [[ "$ok" != "true" ]]; then
 fi
 trap - ERR
 
-curl -fsS http://127.0.0.1/api/health && echo
+"${curl_front[@]}" "${front_url}/api/health" && echo
 
 # Conserva solo los últimos releases.
 cd "${app_root}/releases"

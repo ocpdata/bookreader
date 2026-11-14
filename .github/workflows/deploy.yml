@@ -33,6 +33,7 @@ jobs:
       TFC_WORKSPACE: ${{ vars.TFC_WORKSPACE }}
       S3_BUCKET: ${{ vars.S3_BUCKET || 'resumen-book-reader' }}
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      APP_DOMAIN: ${{ vars.APP_DOMAIN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -158,7 +159,7 @@ jobs:
           scp "${ssh_opts[@]}" "$RUNNER_TEMP/api.env" "deployer@${PUBLIC_IP}:/tmp/bookreader-api.env"
           scp "${ssh_opts[@]}" scripts/deploy_remote.sh "deployer@${PUBLIC_IP}:/tmp/deploy_remote.sh"
           ssh "${ssh_opts[@]}" "deployer@${PUBLIC_IP}" \
-            "chmod +x /tmp/deploy_remote.sh && /tmp/deploy_remote.sh /tmp/bookreader-release.tgz /tmp/bookreader-api.env ${release_id} ${{ inputs.run_migrations }}; status=\$?; rm -f /tmp/deploy_remote.sh; exit \$status"
+            "chmod +x /tmp/deploy_remote.sh && /tmp/deploy_remote.sh /tmp/bookreader-release.tgz /tmp/bookreader-api.env ${release_id} ${{ inputs.run_migrations }} '${APP_DOMAIN}'; status=\$?; rm -f /tmp/deploy_remote.sh; exit \$status"
 
       - name: Configure S3 CORS
         continue-on-error: true
