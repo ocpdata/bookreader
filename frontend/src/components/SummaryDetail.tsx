@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { getPlaybackUrl, getSummary } from '../api'
+import { formatDuration } from '../format'
 import type { Summary } from '../types'
+import AudioPlayer from './AudioPlayer'
 
-interface Props {
-  id: string
-  onBack: () => void
-  onEdit: (summary: Summary) => void
-}
-
-export default function SummaryDetail({ id, onBack, onEdit }: Props) {
+export default function SummaryDetail() {
+  const { id = '' } = useParams()
+  const navigate = useNavigate()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
@@ -21,6 +20,10 @@ export default function SummaryDetail({ id, onBack, onEdit }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    refreshed.current = false
+    setSummary(null)
+    setUrl('')
+    setError('')
     Promise.all([getSummary(id), getPlaybackUrl(id)])
       .then(([s, u]) => {
         if (cancelled) return
@@ -33,7 +36,7 @@ export default function SummaryDetail({ id, onBack, onEdit }: Props) {
     }
   }, [id])
 
-  // La URL temporal puede expirar si la ficha queda abierta mucho tiempo: se renueva una vez.
+  // La URL temporal caduca (1 h): se renueva una vez y el reproductor continúa donde iba.
   async function handleAudioError() {
     if (refreshed.current) return setError('No se pudo reproducir el audio')
     refreshed.current = true
@@ -44,10 +47,14 @@ export default function SummaryDetail({ id, onBack, onEdit }: Props) {
     }
   }
 
+  const meta = summary
+    ? [summary.author, summary.category.name, formatDuration(summary.durationSeconds)].filter(Boolean).join(' · ')
+    : ''
+
   return (
     <Stack spacing={2}>
-      <Button onClick={onBack} sx={{ alignSelf: 'flex-start' }}>
-        ← Volver a la biblioteca
+      <Button onClick={() => navigate(-1)} sx={{ alignSelf: 'flex-start' }}>
+        ← Volver
       </Button>
       {error && <Alert severity="error">{error}</Alert>}
       {!summary && !error && <CircularProgress size={28} />}
@@ -56,12 +63,24 @@ export default function SummaryDetail({ id, onBack, onEdit }: Props) {
           <Typography variant="h5" component="h1">
             {summary.title}
           </Typography>
-          <Typography color="text.secondary">
-            {summary.author} · {summary.category.name}
-          </Typography>
+          {summary.summaryTitle && <Typography variant="subtitle1">{summary.summaryTitle}</Typography>}
+          <Typography color="text.secondary">{meta}</Typography>
+          {summary.narrator && (
+            <Typography variant="body2" color="text.secondary">
+              Narra: {summary.narrator}
+            </Typography>
+          )}
           {summary.description && <Typography>{summary.description}</Typography>}
-          {url && <audio controls preload="metadata" src={url} onError={handleAudioError} style={{ width: '100%' }} />}
-          <Button onClick={() => onEdit(summary)} sx={{ alignSelf: 'flex-start' }}>
+          {url && (
+            <AudioPlayer
+              src={url}
+              title={summary.title}
+              artist={summary.author}
+              durationSeconds={summary.durationSeconds}
+              onError={handleAudioError}
+            />
+          )}
+          <Button onClick={() => navigate(`/audios/${summary.id}/editar`)} sx={{ alignSelf: 'flex-start' }}>
             Editar
           </Button>
         </>

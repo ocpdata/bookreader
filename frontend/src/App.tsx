@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link as RouterLink, Navigate, Route, Routes } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
 import Alert from '@mui/material/Alert'
 import Container from '@mui/material/Container'
@@ -8,18 +9,11 @@ import { listCategories } from './api'
 import LibraryView from './components/LibraryView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
-import type { Category, Summary } from './types'
-
-type View =
-  | { name: 'library' }
-  | { name: 'detail'; id: string }
-  | { name: 'form'; summary?: Summary }
+import type { Category } from './types'
 
 export default function App() {
-  const [view, setView] = useState<View>({ name: 'library' })
   const [categories, setCategories] = useState<Category[]>([])
   const [error, setError] = useState('')
-  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     listCategories()
@@ -27,16 +21,18 @@ export default function App() {
       .catch((e: Error) => setError(e.message))
   }, [])
 
-  const goLibrary = () => {
-    setRefreshKey((k) => k + 1)
-    setView({ name: 'library' })
-  }
-
   return (
     <>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6">📚 BookReader</Typography>
+          <Typography
+            variant="h6"
+            component={RouterLink}
+            to="/"
+            sx={{ color: 'inherit', textDecoration: 'none' }}
+          >
+            📚 BookReader
+          </Typography>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 3 }}>
@@ -45,30 +41,13 @@ export default function App() {
             {error}
           </Alert>
         )}
-        {view.name === 'library' && (
-          <LibraryView
-            categories={categories}
-            refreshKey={refreshKey}
-            onAdd={() => setView({ name: 'form' })}
-            onListen={(s) => setView({ name: 'detail', id: s.id })}
-            onEdit={(s) => setView({ name: 'form', summary: s })}
-          />
-        )}
-        {view.name === 'detail' && (
-          <SummaryDetail
-            id={view.id}
-            onBack={goLibrary}
-            onEdit={(s) => setView({ name: 'form', summary: s })}
-          />
-        )}
-        {view.name === 'form' && (
-          <SummaryForm
-            categories={categories}
-            summary={view.summary}
-            onDone={goLibrary}
-            onCancel={goLibrary}
-          />
-        )}
+        <Routes>
+          <Route path="/" element={<LibraryView categories={categories} />} />
+          <Route path="/audios/nuevo" element={<SummaryForm categories={categories} />} />
+          <Route path="/audios/:id" element={<SummaryDetail />} />
+          <Route path="/audios/:id/editar" element={<SummaryForm categories={categories} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Container>
     </>
   )

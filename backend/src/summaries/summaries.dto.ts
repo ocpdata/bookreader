@@ -33,6 +33,18 @@ export class UpdateSummaryDto {
   description?: string;
 
   @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  summaryTitle?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  narrator?: string;
+
+  @IsOptional()
   @IsUUID()
   categoryId?: string;
 }
@@ -56,6 +68,18 @@ export class CreateSummaryDto {
   @MaxLength(2000)
   description?: string;
 
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  summaryTitle?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  narrator?: string;
+
   @IsUUID()
   categoryId!: string;
 
@@ -73,6 +97,9 @@ export class CreateSummaryDto {
   sizeBytes!: number;
 }
 
+export const SORT_OPTIONS = ['recent', 'title', 'duration'] as const;
+export type SortOption = (typeof SORT_OPTIONS)[number];
+
 export class ListSummariesQuery {
   @IsOptional()
   @Transform(trim)
@@ -82,4 +109,8 @@ export class ListSummariesQuery {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  @IsOptional()
+  @IsIn(SORT_OPTIONS as unknown as string[])
+  sort?: SortOption;
 }

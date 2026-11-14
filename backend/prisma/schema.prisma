@@ -13,6 +13,18 @@ enum SummaryStatus {
   READY
 }
 
+// Usuario único hasta que exista el login. El id fijo se crea en la migración.
+model User {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  name         String    @db.VarChar(100)
+  email        String?   @unique @db.VarChar(255)
+  passwordHash String?   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  summaries    Summary[]
+
+  @@map("users")
+}
+
 model Category {
   id        String    @id @default(uuid()) @db.VarChar(36)
   name      String    @unique @db.VarChar(100)
@@ -23,9 +35,16 @@ model Category {
 
 model Summary {
   id               String        @id @default(uuid()) @db.VarChar(36)
+  // El valor por defecto es temporal: mantiene compatible el release anterior tras un rollback.
+  // Se elimina cuando exista el login.
+  userId           String        @default("00000000-0000-4000-8000-000000000001") @map("user_id") @db.VarChar(36)
+  user             User          @relation(fields: [userId], references: [id])
   title            String        @db.VarChar(200)
   author           String        @db.VarChar(200)
+  summaryTitle     String?       @map("summary_title") @db.VarChar(200)
+  narrator         String?       @db.VarChar(200)
   description      String?       @db.Text
+  durationSeconds  Int?          @map("duration_seconds")
   categoryId       String        @map("category_id") @db.VarChar(36)
   category         Category      @relation(fields: [categoryId], references: [id])
   s3Key            String        @unique @map("s3_key") @db.VarChar(255)
@@ -37,5 +56,6 @@ model Summary {
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
   @@index([categoryId])
+  @@index([userId, createdAt])
   @@map("summaries")
 }

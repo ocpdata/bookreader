@@ -2,9 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { parseStream } from 'music-metadata';
+import { Readable } from 'node:stream';
 
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const PLAYBACK_TTL_SECONDS = 60 * 60;
+const AUDIO_PARSE_TIMEOUT_MS = 45_000;
 
 @Injectable()
 export class StorageService {
@@ -40,6 +43,31 @@ export class StorageService {
     } catch (err: any) {
       if (err?.name === 'NotFound' || err?.$metadata?.httpStatusCode === 404) return null;
       throw err;
+    }
+  }
+
+  /**
+   * Duración en segundos leyendo el objeto en streaming. Lanza si el contenido no es un audio
+   * legible (comprueba el contenido real, no solo la extensión).
+   */
+  async getAudioDurationSeconds(key: string, contentType: string, sizeBytes: number): Promise<number> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), AUDIO_PARSE_TIMEOUT_MS);
+    let body: Readable | undefined;
+    try {
+      const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+        abortSignal: abort.signal,
+      });
+      body = object.Body as Readable;
+      const metadata = await parseStream(body, { mimeType: contentType, size: sizeBytes }, { duration: true });
+      const duration = metadata.format.duration;
+      if (!duration || !Number.isFinite(duration) || duration <= 0) {
+        throw new Error('No se pudo determinar la duración del audio');
+      }
+      return Math.max(1, Math.round(duration));
+    } finally {
+      clearTimeout(timer);
+      body?.destroy();
     }
   }
 }

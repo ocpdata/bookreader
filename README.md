@@ -45,15 +45,28 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | Método | Endpoint | Función |
 | --- | --- | --- |
 | GET | `/api/categories` | Listar categorías |
-| GET | `/api/summaries?search=&categoryId=` | Listar/buscar (solo `READY`; sin distinguir acentos) |
+| GET | `/api/summaries?search=&categoryId=&sort=` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos; `sort` = `recent`, `title` o `duration`) |
 | GET | `/api/summaries/:id` | Consultar un resumen |
 | POST | `/api/summaries` | Crear registro `PENDING` y obtener URL de carga |
-| POST | `/api/summaries/:id/complete` | Verificar el objeto en S3 y marcar `READY` |
-| PATCH | `/api/summaries/:id` | Editar título, autor, categoría y descripción |
+| POST | `/api/summaries/:id/complete` | Verificar el objeto en S3, leer su duración real (rechaza archivos que no son audio) y marcar `READY` |
+| PATCH | `/api/summaries/:id` | Editar título, autor, título del resumen, narrador, categoría y descripción |
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
 | GET | `/api/health` | Estado de la API y de la base de datos |
 
-Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{uuid}/audio.ext`.
+Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{userId}/{uuid}/audio.ext`.
+
+## Usuarios
+
+Cada audio pertenece a un usuario y todas las consultas se filtran por él; un audio ajeno responde 404. Hasta que exista el login hay un único usuario fijo (`DEFAULT_USER_ID`, creado en la migración). Para implementar el login solo hay que reemplazar `SingleUserResolver` (`backend/src/auth/`), el único punto que decide quién es el usuario de la petición, y quitar el valor por defecto de `summaries.user_id`.
+
+## Pruebas
+
+```bash
+docker compose up -d
+cd backend && npm run test:e2e   # usa la base bookreader_test; S3 está simulado
+```
+
+Cubren el aislamiento entre usuarios, la duración real de MP3 y M4A, el rechazo de archivos que no son audio, la búsqueda, el orden y las validaciones. **Entorno local y producción comparten el bucket S3**: al limpiar datos de prueba borra solo las claves concretas que creaste, nunca `audios/` completo.
 
 ## Infraestructura (`infra/`)
 

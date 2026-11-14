@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -11,23 +12,38 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { listSummaries } from '../api'
-import type { Category, Summary } from '../types'
+import { formatDuration } from '../format'
+import type { Category, SortOption, Summary } from '../types'
+
+const SORTS: { value: SortOption; label: string }[] = [
+  { value: 'recent', label: 'Más recientes' },
+  { value: 'title', label: 'Título (A–Z)' },
+  { value: 'duration', label: 'Más largos' },
+]
 
 interface Props {
   categories: Category[]
-  onListen: (summary: Summary) => void
-  onEdit: (summary: Summary) => void
-  onAdd: () => void
-  refreshKey: number
 }
 
-export default function LibraryView({ categories, onListen, onEdit, onAdd, refreshKey }: Props) {
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [categoryId, setCategoryId] = useState('')
+export default function LibraryView({ categories }: Props) {
+  const navigate = useNavigate()
+  // Filtros y orden viven en la URL: el botón "atrás" vuelve a la misma búsqueda.
+  const [params, setParams] = useSearchParams()
+  const categoryId = params.get('categoria') ?? ''
+  const sort = (SORTS.some((s) => s.value === params.get('orden')) ? params.get('orden') : 'recent') as SortOption
+
+  const [search, setSearch] = useState(params.get('q') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(search.trim())
   const [summaries, setSummaries] = useState<Summary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const updateParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true })
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -35,9 +51,14 @@ export default function LibraryView({ categories, onListen, onEdit, onAdd, refre
   }, [search])
 
   useEffect(() => {
+    if ((params.get('q') ?? '') !== debouncedSearch) updateParam('q', debouncedSearch)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch])
+
+  useEffect(() => {
     let cancelled = false
     setLoading(true)
-    listSummaries(debouncedSearch, categoryId)
+    listSummaries(debouncedSearch, categoryId, sort)
       .then((items) => {
         if (cancelled) return
         setSummaries(items)
@@ -48,7 +69,7 @@ export default function LibraryView({ categories, onListen, onEdit, onAdd, refre
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, categoryId, refreshKey])
+  }, [debouncedSearch, categoryId, sort])
 
   return (
     <Stack spacing={2}>
@@ -56,7 +77,7 @@ export default function LibraryView({ categories, onListen, onEdit, onAdd, refre
         <Typography variant="h5" component="h1">
           Mi biblioteca
         </Typography>
-        <Button variant="contained" onClick={onAdd}>
+        <Button variant="contained" onClick={() => navigate('/audios/nuevo')}>
           + Agregar resumen
         </Button>
       </Stack>
@@ -73,14 +94,28 @@ export default function LibraryView({ categories, onListen, onEdit, onAdd, refre
           select
           label="Categoría"
           value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
+          onChange={(e) => updateParam('categoria', e.target.value)}
           size="small"
-          sx={{ minWidth: 220 }}
+          sx={{ minWidth: 200 }}
         >
           <MenuItem value="">Todas</MenuItem>
           {categories.map((c) => (
             <MenuItem key={c.id} value={c.id}>
               {c.name}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          label="Ordenar por"
+          value={sort}
+          onChange={(e) => updateParam('orden', e.target.value === 'recent' ? '' : e.target.value)}
+          size="small"
+          sx={{ minWidth: 170 }}
+        >
+          {SORTS.map((s) => (
+            <MenuItem key={s.value} value={s.value}>
+              {s.label}
             </MenuItem>
           ))}
         </TextField>
@@ -96,20 +131,27 @@ export default function LibraryView({ categories, onListen, onEdit, onAdd, refre
         <Typography color="text.secondary">No hay resúmenes que mostrar.</Typography>
       )}
 
-      {summaries.map((s) => (
-        <Card key={s.id} variant="outlined">
-          <CardContent>
-            <Typography variant="h6">{s.title}</Typography>
-            <Typography color="text.secondary">
-              {s.author} · {s.category.name}
-            </Typography>
-          </CardContent>
-          <CardActions>
-            <Button onClick={() => onListen(s)}>Escuchar</Button>
-            <Button onClick={() => onEdit(s)}>Editar</Button>
-          </CardActions>
-        </Card>
-      ))}
+      {summaries.map((s) => {
+        const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
+        return (
+          <Card key={s.id} variant="outlined">
+            <CardContent>
+              <Typography variant="h6">{s.title}</Typography>
+              {s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
+              <Typography color="text.secondary">{meta}</Typography>
+              {s.narrator && (
+                <Typography variant="body2" color="text.secondary">
+                  Narra: {s.narrator}
+                </Typography>
+              )}
+            </CardContent>
+            <CardActions>
+              <Button onClick={() => navigate(`/audios/${s.id}`)}>Escuchar</Button>
+              <Button onClick={() => navigate(`/audios/${s.id}/editar`)}>Editar</Button>
+            </CardActions>
+          </Card>
+        )
+      })}
     </Stack>
   )
 }

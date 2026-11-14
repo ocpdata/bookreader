@@ -1,4 +1,4 @@
-import type { Category, Summary, SummaryFields } from './types'
+import type { Category, SortOption, Summary, SummaryFields } from './types'
 
 const AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -32,10 +32,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const listCategories = () => request<Category[]>('/categories')
 
-export function listSummaries(search: string, categoryId: string) {
+export function listSummaries(search: string, categoryId: string, sort: SortOption) {
   const params = new URLSearchParams()
   if (search) params.set('search', search)
   if (categoryId) params.set('categoryId', categoryId)
+  params.set('sort', sort)
   return request<Summary[]>(`/summaries?${params}`)
 }
 

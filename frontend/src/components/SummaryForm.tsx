@@ -1,29 +1,57 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { MAX_AUDIO_BYTES, audioContentType, createSummary, updateSummary } from '../api'
+import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, updateSummary } from '../api'
+import { formatDuration } from '../format'
 import type { Category, Summary } from '../types'
 
 interface Props {
   categories: Category[]
-  summary?: Summary
-  onDone: () => void
-  onCancel: () => void
 }
 
-export default function SummaryForm({ categories, summary, onDone, onCancel }: Props) {
-  const editing = Boolean(summary)
-  const [title, setTitle] = useState(summary?.title ?? '')
-  const [author, setAuthor] = useState(summary?.author ?? '')
-  const [categoryId, setCategoryId] = useState(summary?.categoryId ?? '')
-  const [description, setDescription] = useState(summary?.description ?? '')
+export default function SummaryForm({ categories }: Props) {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const editing = Boolean(id)
+
+  const [original, setOriginal] = useState<Summary | null>(null)
+  const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState('')
+  const [summaryTitle, setSummaryTitle] = useState('')
+  const [narrator, setNarrator] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [description, setDescription] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [loading, setLoading] = useState(editing)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    getSummary(id)
+      .then((s) => {
+        if (cancelled) return
+        setOriginal(s)
+        setTitle(s.title)
+        setAuthor(s.author)
+        setSummaryTitle(s.summaryTitle ?? '')
+        setNarrator(s.narrator ?? '')
+        setCategoryId(s.categoryId)
+        setDescription(s.description ?? '')
+      })
+      .catch((e: Error) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -34,17 +62,20 @@ export default function SummaryForm({ categories, summary, onDone, onCancel }: P
       if (file.size > MAX_AUDIO_BYTES) return setError('El archivo supera el máximo de 200 MB')
     }
 
-    const fields = { title, author, description, categoryId }
+    const fields = { title, author, summaryTitle, narrator, description, categoryId }
     setSaving(true)
     try {
-      if (summary) await updateSummary(summary.id, fields)
+      if (id) await updateSummary(id, fields)
       else await createSummary(fields, file!)
-      onDone()
+      navigate('/')
     } catch (err) {
       setError((err as Error).message)
       setSaving(false)
     }
   }
+
+  if (loading) return <CircularProgress size={28} />
+  if (editing && !original) return <Alert severity="error">{error || 'Resumen no encontrado'}</Alert>
 
   return (
     <form onSubmit={handleSubmit}>
@@ -53,7 +84,17 @@ export default function SummaryForm({ categories, summary, onDone, onCancel }: P
           {editing ? 'Editar resumen' : 'Agregar resumen'}
         </Typography>
         <TextField label="Título del libro" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <TextField label="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} required />
+        <TextField label="Autor del libro" value={author} onChange={(e) => setAuthor(e.target.value)} required />
+        <TextField
+          label="Título del resumen (opcional)"
+          value={summaryTitle}
+          onChange={(e) => setSummaryTitle(e.target.value)}
+        />
+        <TextField
+          label="Narrador o creador del audio (opcional)"
+          value={narrator}
+          onChange={(e) => setNarrator(e.target.value)}
+        />
         <TextField
           select
           label="Categoría"
@@ -74,9 +115,11 @@ export default function SummaryForm({ categories, summary, onDone, onCancel }: P
           multiline
           minRows={3}
         />
-        {editing ? (
+        {original ? (
           <Typography variant="body2" color="text.secondary">
-            Audio actual: {summary!.originalFilename} (no se puede reemplazar).
+            Audio actual: {original.originalFilename}
+            {original.durationSeconds ? ` · ${formatDuration(original.durationSeconds)}` : ''} (no se puede
+            reemplazar).
           </Typography>
         ) : (
           <Button component="label" variant="outlined">
@@ -90,12 +133,12 @@ export default function SummaryForm({ categories, summary, onDone, onCancel }: P
           </Button>
         )}
         {error && <Alert severity="error">{error}</Alert>}
-        {saving && !editing && <Alert severity="info">Subiendo audio, no cierres esta página…</Alert>}
+        {saving && !editing && <Alert severity="info">Subiendo y verificando el audio, no cierres esta página…</Alert>}
         <Stack direction="row" spacing={1}>
           <Button type="submit" variant="contained" disabled={saving}>
             {editing ? 'Guardar' : 'Subir resumen'}
           </Button>
-          <Button onClick={onCancel} disabled={saving}>
+          <Button onClick={() => navigate(-1)} disabled={saving}>
             Cancelar
           </Button>
         </Stack>
