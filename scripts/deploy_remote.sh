@@ -42,6 +42,10 @@ tar -xzf "$archive" -C "$release_root"
 install -m 0640 "$env_file" "$shared_env"
 rm -f "$archive" "$env_file"
 
+# Nginx (www-data) solo necesita atravesar estos directorios para llegar al frontend.
+# shared/ (con las credenciales) se mantiene en 750.
+chmod 751 "$app_root" "${app_root}/releases"
+
 trap rollback ERR
 
 if [[ "$run_migrations" == "true" ]]; then
@@ -60,11 +64,12 @@ fi
 ln -sfn "$release_root" "$current_link"
 sudo systemctl restart bookreader-api
 
-# Healthcheck local: API directa y a través de Nginx.
+# Healthcheck local: API directa, y API y frontend estático a través de Nginx.
 ok=false
 for _ in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 \
-    && curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1; then
+    && curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1 \
+    && curl -fsS http://127.0.0.1/ 2>/dev/null | grep -q 'id="root"'; then
     ok=true
     break
   fi

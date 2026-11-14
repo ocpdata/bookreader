@@ -37,8 +37,10 @@ EOF
 chmod 440 /etc/sudoers.d/deployer
 visudo -cf /etc/sudoers.d/deployer
 
-# Directorios de la aplicación
-install -d -m 750 -o deployer -g deployer /var/app/bookreader /var/app/bookreader/releases /var/app/bookreader/shared
+# Directorios de la aplicación. 751 en la raíz y en releases/: Nginx (www-data) debe poder
+# atravesarlos para servir el frontend; shared/ (credenciales) queda en 750.
+install -d -m 751 -o deployer -g deployer /var/app/bookreader /var/app/bookreader/releases
+install -d -m 750 -o deployer -g deployer /var/app/bookreader/shared
 
 # Servicio systemd de la API
 cat > /etc/systemd/system/bookreader-api.service <<'EOF'
