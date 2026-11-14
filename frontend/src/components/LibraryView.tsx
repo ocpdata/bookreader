@@ -6,13 +6,15 @@ import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardActions from '@mui/material/CardActions'
 import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
+import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { listSummaries } from '../api'
-import { formatDuration } from '../format'
+import { formatClock, formatDuration } from '../format'
 import type { Category, SortOption, Summary } from '../types'
 
 const SORTS: { value: SortOption; label: string }[] = [
@@ -133,10 +135,17 @@ export default function LibraryView({ categories }: Props) {
 
       {summaries.map((s) => {
         const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
+        const progress = s.progress
+        const inProgress = !!progress && !progress.completed && progress.positionSeconds > 0
+        const percent =
+          inProgress && s.durationSeconds ? Math.min(100, (progress.positionSeconds / s.durationSeconds) * 100) : 0
         return (
           <Card key={s.id} variant="outlined">
             <CardContent>
-              <Typography variant="h6">{s.title}</Typography>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography variant="h6">{s.title}</Typography>
+                {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
+              </Stack>
               {s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
               <Typography color="text.secondary">{meta}</Typography>
               {s.narrator && (
@@ -144,9 +153,17 @@ export default function LibraryView({ categories }: Props) {
                   Narra: {s.narrator}
                 </Typography>
               )}
+              {inProgress && (
+                <Box sx={{ mt: 1 }}>
+                  <LinearProgress variant="determinate" value={percent} aria-label="Avance" />
+                  <Typography variant="caption" color="text.secondary">
+                    Escuchado hasta {formatClock(progress.positionSeconds)}
+                  </Typography>
+                </Box>
+              )}
             </CardContent>
             <CardActions>
-              <Button onClick={() => navigate(`/audios/${s.id}`)}>Escuchar</Button>
+              <Button onClick={() => navigate(`/audios/${s.id}`)}>{inProgress ? 'Continuar' : 'Escuchar'}</Button>
               <Button onClick={() => navigate(`/audios/${s.id}/editar`)}>Editar</Button>
             </CardActions>
           </Card>

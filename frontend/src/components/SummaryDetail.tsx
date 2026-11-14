@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { getPlaybackUrl, getSummary } from '../api'
-import { formatDuration } from '../format'
-import type { Summary } from '../types'
-import AudioPlayer from './AudioPlayer'
+import { getPlaybackUrl, getSummary, resetProgress, saveProgress } from '../api'
+import { formatClock, formatDuration } from '../format'
+import type { Progress, Summary } from '../types'
+import AudioPlayer, { type SaveOptions } from './AudioPlayer'
 
 export default function SummaryDetail() {
   const { id = '' } = useParams()
@@ -16,7 +17,12 @@ export default function SummaryDetail() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
+  const [progress, setProgress] = useState<Progress | null>(null)
+  const [startAt, setStartAt] = useState(0)
+  const [playerKey, setPlayerKey] = useState(0)
   const refreshed = useRef(false)
+  // Durante "Reiniciar" se ignoran los guardados del reproductor que se desmonta.
+  const suppressSave = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -29,6 +35,9 @@ export default function SummaryDetail() {
         if (cancelled) return
         setSummary(s)
         setUrl(u)
+        setProgress(s.progress)
+        // Un audio terminado vuelve a empezar desde el principio.
+        setStartAt(s.progress && !s.progress.completed ? s.progress.positionSeconds : 0)
       })
       .catch((e: Error) => !cancelled && setError(e.message))
     return () => {
@@ -44,6 +53,37 @@ export default function SummaryDetail() {
       setUrl(await getPlaybackUrl(id))
     } catch (e) {
       setError((e as Error).message)
+    }
+  }
+
+  // Un fallo al guardar no interrumpe la escucha: el siguiente guardado lo reintenta.
+  const handleProgress = (positionSeconds: number, options: SaveOptions) => {
+    if (suppressSave.current) return
+    saveProgress(id, { positionSeconds, ...(options.completed ? { completed: true } : {}) }, options.keepalive)
+      .then(setProgress)
+      .catch(() => undefined)
+  }
+
+  async function setCompleted(completed: boolean) {
+    try {
+      setProgress(await saveProgress(id, { completed }))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function restart() {
+    suppressSave.current = true
+    try {
+      await resetProgress(id)
+      setProgress(null)
+      setStartAt(0)
+      setPlayerKey((k) => k + 1)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      // El reproductor anterior guarda al desmontarse; después ya se puede guardar de nuevo.
+      setTimeout(() => (suppressSave.current = false), 500)
     }
   }
 
@@ -71,18 +111,38 @@ export default function SummaryDetail() {
             </Typography>
           )}
           {summary.description && <Typography>{summary.description}</Typography>}
+
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
+            {startAt > 0 && (
+              <Typography variant="body2" color="text.secondary">
+                Retomando desde {formatClock(startAt)}
+              </Typography>
+            )}
+          </Stack>
+
           {url && (
             <AudioPlayer
+              key={playerKey}
               src={url}
               title={summary.title}
               artist={summary.author}
               durationSeconds={summary.durationSeconds}
+              startAt={startAt}
+              onProgress={handleProgress}
               onError={handleAudioError}
             />
           )}
-          <Button onClick={() => navigate(`/audios/${summary.id}/editar`)} sx={{ alignSelf: 'flex-start' }}>
-            Editar
-          </Button>
+
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            <Button onClick={() => setCompleted(!progress?.completed)}>
+              {progress?.completed ? 'Marcar como pendiente' : 'Marcar como terminado'}
+            </Button>
+            <Button onClick={restart} disabled={!progress}>
+              Reiniciar
+            </Button>
+            <Button onClick={() => navigate(`/audios/${summary.id}/editar`)}>Editar</Button>
+          </Stack>
         </>
       )}
     </Stack>

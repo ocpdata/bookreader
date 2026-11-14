@@ -8,6 +8,7 @@ import {
   AUDIO_TYPES,
   CreateSummaryDto,
   ListSummariesQuery,
+  SaveProgressDto,
   SortOption,
   UpdateSummaryDto,
 } from './summaries.dto';
@@ -17,6 +18,23 @@ const ORDER_BY: Record<SortOption, Prisma.SummaryOrderByWithRelationInput[]> = {
   title: [{ title: 'asc' }, { createdAt: 'desc' }],
   duration: [{ durationSeconds: 'desc' }, { createdAt: 'desc' }],
 };
+
+/** Fracción de la duración a partir de la cual el audio se considera terminado. */
+const COMPLETE_RATIO = 0.95;
+
+const withProgress = (userId: string) => ({ category: true, progress: { where: { userId } } });
+
+/** Cada fila trae el progreso del usuario como lista de 0 o 1 elementos; se expone como objeto o null. */
+function present<T extends { progress: { positionSeconds: number; completed: boolean; updatedAt: Date }[] }>(
+  summary: T,
+) {
+  const { progress, ...rest } = summary;
+  const row = progress[0];
+  return {
+    ...rest,
+    progress: row ? { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt } : null,
+  };
+}
 
 const emptyToNull = (value: string | undefined) => (value === undefined ? undefined : value || null);
 
@@ -40,21 +58,16 @@ export class SummariesService {
         { summaryTitle: { contains: term } },
       ];
     }
-    return this.prisma.summary.findMany({
-      where,
-      include: { category: true },
-      orderBy: ORDER_BY[sort ?? 'recent'],
-    });
+    return this.prisma.summary
+      .findMany({ where, include: withProgress(userId), orderBy: ORDER_BY[sort ?? 'recent'] })
+      .then((rows) => rows.map(present));
   }
 
   /** Un audio ajeno se trata igual que uno inexistente (404) para no revelar que existe. */
   async get(id: string, userId: string) {
-    const summary = await this.prisma.summary.findFirst({
-      where: { id, userId },
-      include: { category: true },
-    });
-    if (!summary) throw new NotFoundException('Resumen no encontrado');
-    return this.fillMissingDuration(summary);
+    const row = await this.prisma.summary.findFirst({ where: { id, userId }, include: withProgress(userId) });
+    if (!row) throw new NotFoundException('Resumen no encontrado');
+    return this.fillMissingDuration(present(row));
   }
 
   /** Audios anteriores a este campo: la duración se calcula al abrirlos y se guarda (mejor esfuerzo). */
@@ -98,10 +111,10 @@ export class SummariesService {
         sizeBytes: dto.sizeBytes,
         contentType: dto.contentType,
       },
-      include: { category: true },
+      include: withProgress(userId),
     });
     const uploadUrl = await this.storage.createUploadUrl(s3Key, dto.contentType, dto.sizeBytes);
-    return { summary, upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };
+    return { summary: present(summary), upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };
   }
 
   async complete(id: string, userId: string) {
@@ -119,17 +132,18 @@ export class SummariesService {
       throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
     }
 
-    return this.prisma.summary.update({
+    const updated = await this.prisma.summary.update({
       where: { id: summary.id },
       data: { status: SummaryStatus.READY, durationSeconds },
-      include: { category: true },
+      include: withProgress(userId),
     });
+    return present(updated);
   }
 
   async update(id: string, userId: string, dto: UpdateSummaryDto) {
     await this.get(id, userId);
     if (dto.categoryId) await this.assertCategory(dto.categoryId);
-    return this.prisma.summary.update({
+    const updated = await this.prisma.summary.update({
       where: { id },
       data: {
         title: dto.title,
@@ -139,8 +153,44 @@ export class SummariesService {
         description: emptyToNull(dto.description),
         categoryId: dto.categoryId,
       },
-      include: { category: true },
+      include: withProgress(userId),
     });
+    return present(updated);
+  }
+
+  async saveProgress(id: string, userId: string, dto: SaveProgressDto) {
+    const summary = await this.get(id, userId);
+    if (summary.status !== SummaryStatus.READY) {
+      throw new BadRequestException('El audio aún no está disponible');
+    }
+    if (dto.positionSeconds === undefined && dto.completed === undefined) {
+      throw new BadRequestException('Indica positionSeconds o completed');
+    }
+
+    const existing = summary.progress;
+    let positionSeconds = dto.positionSeconds ?? existing?.positionSeconds ?? 0;
+    if (summary.durationSeconds) positionSeconds = Math.min(positionSeconds, summary.durationSeconds);
+
+    // "Terminado" es persistente: solo cambia al llegar al final, o de forma explícita.
+    const reachedEnd = !!summary.durationSeconds && positionSeconds >= summary.durationSeconds * COMPLETE_RATIO;
+    const completed = dto.completed ?? (reachedEnd || (existing?.completed ?? false));
+
+    const where = { userId_summaryId: { userId, summaryId: id } };
+    const data = { positionSeconds, completed };
+    let row;
+    try {
+      row = await this.prisma.playbackProgress.upsert({ where, update: data, create: { userId, summaryId: id, ...data } });
+    } catch (error) {
+      // Dos guardados simultáneos pueden competir por crear la fila: el segundo la actualiza.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      row = await this.prisma.playbackProgress.update({ where, data });
+    }
+    return { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt };
+  }
+
+  async resetProgress(id: string, userId: string) {
+    await this.get(id, userId);
+    await this.prisma.playbackProgress.deleteMany({ where: { userId, summaryId: id } });
   }
 
   async playback(id: string, userId: string) {

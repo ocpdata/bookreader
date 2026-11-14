@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SummariesService } from './summaries.service';
-import { CreateSummaryDto, ListSummariesQuery, UpdateSummaryDto } from './summaries.dto';
+import { CreateSummaryDto, ListSummariesQuery, SaveProgressDto, UpdateSummaryDto } from './summaries.dto';
 
 @Controller('summaries')
 export class SummariesController {
@@ -41,5 +41,20 @@ export class SummariesController {
   @HttpCode(200)
   playback(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.summaries.playback(id, userId);
+  }
+
+  @Put(':id/progress')
+  saveProgress(
+    @CurrentUser() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SaveProgressDto,
+  ) {
+    return this.summaries.saveProgress(id, userId, dto);
+  }
+
+  @Delete(':id/progress')
+  @HttpCode(204)
+  resetProgress(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.summaries.resetProgress(id, userId);
   }
 }

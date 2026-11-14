@@ -3,6 +3,12 @@ export interface Category {
   name: string
 }
 
+export interface Progress {
+  positionSeconds: number
+  completed: boolean
+  updatedAt: string
+}
+
 export interface Summary {
   id: string
   title: string
@@ -11,6 +17,7 @@ export interface Summary {
   narrator: string | null
   description: string | null
   durationSeconds: number | null
+  progress: Progress | null
   categoryId: string
   category: Category
   originalFilename: string

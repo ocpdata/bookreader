@@ -1,4 +1,4 @@
-import type { Category, SortOption, Summary, SummaryFields } from './types'
+import type { Category, Progress, SortOption, Summary, SummaryFields } from './types'
 
 const AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -27,12 +27,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message = Array.isArray(body?.message) ? body.message.join('. ') : body?.message
     throw new Error(message ?? `Error ${res.status}`)
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
+// Guardados de progreso en vuelo. Las lecturas los esperan: al volver a la lista justo después de
+// escuchar (el guardado final sale al desmontar el reproductor), se ve la posición ya guardada.
+const pendingSaves = new Set<Promise<unknown>>()
+
+function track<T>(promise: Promise<T>): Promise<T> {
+  const done = () => void pendingSaves.delete(promise)
+  pendingSaves.add(promise)
+  promise.then(done, done)
+  return promise
+}
+
+const settlePendingSaves = () => Promise.allSettled([...pendingSaves])
+
 export const listCategories = () => request<Category[]>('/categories')
 
-export function listSummaries(search: string, categoryId: string, sort: SortOption) {
+export async function listSummaries(search: string, categoryId: string, sort: SortOption) {
+  await settlePendingSaves()
   const params = new URLSearchParams()
   if (search) params.set('search', search)
   if (categoryId) params.set('categoryId', categoryId)
@@ -40,10 +55,21 @@ export function listSummaries(search: string, categoryId: string, sort: SortOpti
   return request<Summary[]>(`/summaries?${params}`)
 }
 
-export const getSummary = (id: string) => request<Summary>(`/summaries/${id}`)
+export const getSummary = async (id: string) => {
+  await settlePendingSaves()
+  return request<Summary>(`/summaries/${id}`)
+}
 
 export const getPlaybackUrl = (id: string) =>
   request<{ url: string }>(`/summaries/${id}/playback`, { method: 'POST' }).then((r) => r.url)
+
+export const saveProgress = (
+  id: string,
+  body: { positionSeconds?: number; completed?: boolean },
+  keepalive = false,
+) => track(request<Progress>(`/summaries/${id}/progress`, { method: 'PUT', body: JSON.stringify(body), keepalive }))
+
+export const resetProgress = (id: string) => request<void>(`/summaries/${id}/progress`, { method: 'DELETE' })
 
 export const updateSummary = (id: string, fields: SummaryFields) =>
   request<Summary>(`/summaries/${id}`, { method: 'PATCH', body: JSON.stringify(fields) })

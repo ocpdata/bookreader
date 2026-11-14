@@ -51,9 +51,15 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | POST | `/api/summaries/:id/complete` | Verificar el objeto en S3, leer su duración real (rechaza archivos que no son audio) y marcar `READY` |
 | PATCH | `/api/summaries/:id` | Editar título, autor, título del resumen, narrador, categoría y descripción |
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
+| PUT | `/api/summaries/:id/progress` | Guardar la posición (`positionSeconds`) y/o `completed` |
+| DELETE | `/api/summaries/:id/progress` | Reiniciar: borra el progreso |
 | GET | `/api/health` | Estado de la API y de la base de datos |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{userId}/{uuid}/audio.ext`.
+
+## Progreso de reproducción
+
+Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y la ficha la devuelven en `progress`. El reproductor guarda cada 10 s mientras suena y al pausar, saltar, terminar o salir de la pantalla. Reglas: al reabrir retoma desde la posición guardada, salvo que el audio esté terminado (entonces empieza de cero); se marca **terminado** al llegar al 95 % o al final, se mantiene hasta que se cambie a mano ("Marcar como pendiente") y "Reiniciar" borra el progreso.
 
 ## Usuarios
 

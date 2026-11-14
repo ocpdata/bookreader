@@ -235,6 +235,86 @@ describe('Summaries (e2e)', () => {
     expect(row?.durationSeconds).toBe(res.body.durationSeconds);
   });
 
+  describe('progreso de reproducción', () => {
+    const put = (id: string, body: unknown, userId = DEFAULT_USER_ID) =>
+      request(app.getHttpServer()).put(`/api/summaries/${id}/progress`).set(as(userId)).send(body as object);
+    const getOne = async (id: string) =>
+      (await request(app.getHttpServer()).get(`/api/summaries/${id}`).set(as(DEFAULT_USER_ID))).body;
+
+    async function readyWithDuration(seconds = 100) {
+      const s = await createReady(DEFAULT_USER_ID);
+      await prisma.summary.update({ where: { id: s.id }, data: { durationSeconds: seconds } });
+      return s.id as string;
+    }
+
+    it('guarda la posición y la devuelve en la ficha y en la lista', async () => {
+      const id = await readyWithDuration();
+      expect((await getOne(id)).progress).toBeNull();
+
+      const res = await put(id, { positionSeconds: 42 });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ positionSeconds: 42, completed: false });
+
+      expect((await getOne(id)).progress).toMatchObject({ positionSeconds: 42, completed: false });
+      const list = await request(app.getHttpServer()).get('/api/summaries').set(as(DEFAULT_USER_ID));
+      expect(list.body[0].progress).toMatchObject({ positionSeconds: 42, completed: false });
+    });
+
+    it('marca terminado al llegar al 95 % y lo mantiene hasta que se cambie', async () => {
+      const id = await readyWithDuration(100);
+      expect((await put(id, { positionSeconds: 94 })).body.completed).toBe(false);
+      expect((await put(id, { positionSeconds: 95 })).body.completed).toBe(true);
+      // Volver a escuchar desde el inicio no lo desmarca.
+      expect((await put(id, { positionSeconds: 10 })).body).toMatchObject({ positionSeconds: 10, completed: true });
+      // Marcar como pendiente es explícito.
+      expect((await put(id, { completed: false })).body).toMatchObject({ positionSeconds: 10, completed: false });
+    });
+
+    it('limita la posición a la duración y conserva la posición al marcar terminado', async () => {
+      const id = await readyWithDuration(100);
+      expect((await put(id, { positionSeconds: 5000 })).body).toMatchObject({ positionSeconds: 100, completed: true });
+      await put(id, { positionSeconds: 30, completed: false });
+      expect((await put(id, { completed: true })).body).toMatchObject({ positionSeconds: 30, completed: true });
+    });
+
+    it('reiniciar borra el progreso', async () => {
+      const id = await readyWithDuration();
+      await put(id, { positionSeconds: 60 });
+      await request(app.getHttpServer()).delete(`/api/summaries/${id}/progress`).set(as(DEFAULT_USER_ID)).expect(204);
+      expect((await getOne(id)).progress).toBeNull();
+      // Es idempotente.
+      await request(app.getHttpServer()).delete(`/api/summaries/${id}/progress`).set(as(DEFAULT_USER_ID)).expect(204);
+    });
+
+    it('no permite tocar el progreso de audios ajenos', async () => {
+      const id = await readyWithDuration();
+      await put(id, { positionSeconds: 20 });
+      await put(id, { positionSeconds: 99 }, USER_B).then((r) => expect(r.status).toBe(404));
+      await request(app.getHttpServer()).delete(`/api/summaries/${id}/progress`).set(as(USER_B)).expect(404);
+      expect((await getOne(id)).progress).toMatchObject({ positionSeconds: 20 });
+      expect(await prisma.playbackProgress.count({ where: { userId: USER_B } })).toBe(0);
+    });
+
+    it('valida la entrada y exige un audio disponible', async () => {
+      const id = await readyWithDuration();
+      for (const body of [{}, { positionSeconds: -1 }, { positionSeconds: 1.5 }, { positionSeconds: '10' }, { completed: 'si' }]) {
+        const res = await put(id, body);
+        expect({ body, status: res.status }).toEqual({ body, status: 400 });
+      }
+      const pending = await createSummary(DEFAULT_USER_ID);
+      expect((await put(pending.body.summary.id, { positionSeconds: 5 })).status).toBe(400);
+    });
+
+    it('el progreso de cada usuario es independiente y se borra con el audio', async () => {
+      const id = await readyWithDuration();
+      await put(id, { positionSeconds: 33 });
+      await prisma.playbackProgress.create({ data: { userId: USER_B, summaryId: id, positionSeconds: 77 } });
+      expect((await getOne(id)).progress.positionSeconds).toBe(33);
+      await prisma.summary.delete({ where: { id } });
+      expect(await prisma.playbackProgress.count({ where: { summaryId: id } })).toBe(0);
+    });
+  });
+
   it('valida los datos de entrada', async () => {
     const bad = [
       { contentType: 'audio/wav' },

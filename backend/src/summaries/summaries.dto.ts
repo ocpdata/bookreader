@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
@@ -113,4 +113,16 @@ export class ListSummariesQuery {
   @IsOptional()
   @IsIn(SORT_OPTIONS as unknown as string[])
   sort?: SortOption;
+}
+
+export class SaveProgressDto {
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(7 * 24 * 3600)
+  positionSeconds?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
 }
