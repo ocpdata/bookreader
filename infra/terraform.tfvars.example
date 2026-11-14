@@ -1,4 +1,7 @@
-allowed_cidr_blocks = ["203.0.113.10/32"] # tu IP pública
-ssh_public_key      = "ssh-ed25519 AAAA... deployer@bookreader"
-db_username         = "bookreader_admin"
-db_password         = "cambia-esto"
+allowed_cidr_blocks  = ["203.0.113.10/32"] # tu IP pública
+ssh_public_key       = "ssh-ed25519 AAAA... deployer@bookreader"
+db_username          = "bookreader_admin"
+db_password          = "cambia-esto"
+vpc_cidr             = "10.91.0.0/16"
+public_subnet_cidr   = "10.91.1.0/24"
+private_subnet_cidrs = ["10.91.10.0/24", "10.91.20.0/24"]

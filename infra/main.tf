@@ -1,5 +1,36 @@
 locals {
   name = "bookreader"
+
+  # CIDR ya usados en la cuenta por otras redes (NewPeople y la VPC por defecto).
+  reserved_cidrs = ["10.90.0.0/16", "172.31.0.0/16"]
+
+  # Rango numérico [inicio, fin] de un CIDR IPv4, para comprobar solapes y pertenencia.
+  cidr_range = {
+    for c in distinct(concat([var.vpc_cidr, var.public_subnet_cidr], var.private_subnet_cidrs, local.reserved_cidrs)) :
+    c => {
+      start = sum([for i, o in split(".", cidrhost(c, 0)) : tonumber(o) * pow(256, 3 - i)])
+      end   = sum([for i, o in split(".", cidrhost(c, 0)) : tonumber(o) * pow(256, 3 - i)]) + pow(2, 32 - tonumber(split("/", c)[1])) - 1
+    }
+  }
+
+  vpc_overlaps = [
+    for r in local.reserved_cidrs : r
+    if local.cidr_range[var.vpc_cidr].start <= local.cidr_range[r].end && local.cidr_range[r].start <= local.cidr_range[var.vpc_cidr].end
+  ]
+
+  subnets_outside_vpc = [
+    for c in concat([var.public_subnet_cidr], var.private_subnet_cidrs) : c
+    if local.cidr_range[c].start < local.cidr_range[var.vpc_cidr].start || local.cidr_range[c].end > local.cidr_range[var.vpc_cidr].end
+  ]
+
+  all_subnets = concat([var.public_subnet_cidr], var.private_subnet_cidrs)
+
+  subnets_overlapping = flatten([
+    for i, a in local.all_subnets : [
+      for j, b in local.all_subnets : "${a} / ${b}"
+      if i < j && local.cidr_range[a].start <= local.cidr_range[b].end && local.cidr_range[b].start <= local.cidr_range[a].end
+    ]
+  ])
 }
 
 data "aws_availability_zones" "available" {
@@ -19,6 +50,23 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
 
   tags = { Name = "${local.name}-vpc" }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.vpc_overlaps) == 0
+      error_message = "vpc_cidr se solapa con una red existente: ${join(", ", local.vpc_overlaps)} (NewPeople 10.90.0.0/16 o VPC por defecto 172.31.0.0/16)."
+    }
+
+    precondition {
+      condition     = length(local.subnets_outside_vpc) == 0
+      error_message = "Subredes fuera de vpc_cidr: ${join(", ", local.subnets_outside_vpc)}."
+    }
+
+    precondition {
+      condition     = length(local.subnets_overlapping) == 0
+      error_message = "Subredes que se solapan entre sí: ${join("; ", local.subnets_overlapping)}."
+    }
+  }
 }
 
 resource "aws_internet_gateway" "main" {

@@ -31,21 +31,44 @@ variable "root_volume_size" {
   default     = 20
 }
 
+# Los rangos de red vienen de las variables de GitHub Actions (VPC_CIDR, PUBLIC_SUBNET_CIDR,
+# PRIVATE_SUBNET_1_CIDR y PRIVATE_SUBNET_2_CIDR) y no tienen valor por defecto: si falta
+# alguno, el plan falla en lugar de usar un rango inesperado. No se deben cambiar una vez
+# creada la red: obligaría a reemplazar la VPC, las subredes y la VM.
+# Las comprobaciones de solape y pertenencia a la VPC están en main.tf (precondiciones).
 variable "vpc_cidr" {
   description = "Rango de la VPC. No debe solaparse con vm-newpeople-vpc (10.90.0.0/16) ni con la VPC por defecto (172.31.0.0/16)."
   type        = string
-  default     = "10.91.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr no es un CIDR válido."
+  }
 }
 
 variable "public_subnet_cidr" {
-  type    = string
-  default = "10.91.1.0/24"
+  description = "Subred pública de la VM."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.public_subnet_cidr, 0))
+    error_message = "public_subnet_cidr no es un CIDR válido."
+  }
 }
 
 variable "private_subnet_cidrs" {
-  description = "Dos subredes privadas en zonas distintas (requisito de RDS)."
+  description = "Subredes privadas de la RDS, en zonas distintas (RDS exige al menos dos)."
   type        = list(string)
-  default     = ["10.91.10.0/24", "10.91.20.0/24"]
+
+  validation {
+    condition     = length(var.private_subnet_cidrs) >= 2 && length(distinct(var.private_subnet_cidrs)) == length(var.private_subnet_cidrs)
+    error_message = "Hacen falta al menos dos subredes privadas distintas."
+  }
+
+  validation {
+    condition     = alltrue([for cidr in var.private_subnet_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "Todas las subredes privadas deben ser CIDR válidos."
+  }
 }
 
 variable "s3_bucket_name" {

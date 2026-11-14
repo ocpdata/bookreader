@@ -60,4 +60,6 @@ Terraform para AWS, independiente de cualquier otra app. El estado vive en el wo
 
 Crea: VPC `10.91.0.0/16`, una VM Ubuntu 24.04 `t3.small` con Elastic IP (Nginx, Node 20, servicio `bookreader-api`), una RDS MySQL 8.4 `db.t4g.micro` privada de 20 GB (sin escalado automático) y un rol de IAM con acceso mínimo al bucket de audios.
 
+Red: los rangos se definen como variables de Actions (`VPC_CIDR`, `PUBLIC_SUBNET_CIDR`, `PRIVATE_SUBNET_1_CIDR`, `PRIVATE_SUBNET_2_CIDR`; hoy `10.91.x`) y no tienen valor por defecto. Terraform rechaza el plan si se solapan con NewPeople (`10.90.0.0/16`) o con la VPC por defecto (`172.31.0.0/16`), o si las subredes quedan fuera de la VPC o se solapan entre sí. **No los cambies una vez creada la red**: obligaría a reemplazar la VPC, las subredes y la VM.
+
 Seguridad: SSH, HTTP y HTTPS solo desde `allowed_cidr_blocks` (Terraform rechaza `0.0.0.0/0`). Se abrirá al público cuando exista el login. Las variables van en un `terraform.tfvars` local (ver `terraform.tfvars.example`), que no se versiona.
