@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SummaryStatus {
+  PENDING
+  READY
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  summaries Summary[]
+
+  @@map("categories")
+}
+
+model Summary {
+  id               String        @id @default(uuid())
+  title            String
+  author           String
+  description      String?
+  categoryId       String        @map("category_id")
+  category         Category      @relation(fields: [categoryId], references: [id])
+  s3Key            String        @unique @map("s3_key")
+  originalFilename String        @map("original_filename")
+  sizeBytes        Int           @map("size_bytes")
+  contentType      String        @map("content_type")
+  status           SummaryStatus @default(PENDING)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@map("summaries")
+}
