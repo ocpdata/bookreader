@@ -69,3 +69,14 @@ export interface HomeData {
   favorites: Summary[]
   categories: CategoryCount[]
 }
+
+export interface TrashItem {
+  id: string
+  title: string
+  author: string
+  category: string
+  sizeBytes: number
+  durationSeconds: number | null
+  deletedAt: string
+  purgeAt: string
+}

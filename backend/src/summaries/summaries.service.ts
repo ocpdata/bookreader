@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { TagsService } from '../tags/tags.service';
+import { PurgeService } from './purge.service';
+import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
 import {
   AUDIO_TYPES,
   CreateSummaryDto,
@@ -62,10 +64,11 @@ export class SummariesService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly tags: TagsService,
+    private readonly purge: PurgeService,
   ) {}
 
   async list(userId: string, { search, categoryId, tag, favorite, status, sort }: ListSummariesQuery) {
-    const where: Prisma.SummaryWhereInput = { userId, status: SummaryStatus.READY };
+    const where: Prisma.SummaryWhereInput = { userId, status: SummaryStatus.READY, deletedAt: null };
     if (categoryId) where.categoryId = categoryId;
     // La colación utf8mb4 de MySQL ignora mayúsculas y acentos, también en la igualdad de etiquetas.
     if (tag) where.tags = { some: { tag: { name: tag } } };
@@ -100,7 +103,7 @@ export class SummariesService {
 
   /** Datos de la pantalla de inicio en una sola consulta: qué retomar, lo nuevo, favoritos y categorías. */
   async home(userId: string) {
-    const ready = { userId, status: SummaryStatus.READY };
+    const ready = { userId, status: SummaryStatus.READY, deletedAt: null };
     const [continueRows, recent, favoriteRows, byCategory, total] = await Promise.all([
       // Audios empezados y no terminados, el último escuchado primero.
       this.prisma.playbackProgress.findMany({
@@ -150,7 +153,10 @@ export class SummariesService {
   }
 
   private async load(id: string, userId: string) {
-    const row = await this.prisma.summary.findFirst({ where: { id, userId }, include: withRelations(userId) });
+    const row = await this.prisma.summary.findFirst({
+      where: { id, userId, deletedAt: null },
+      include: withRelations(userId),
+    });
     if (!row) throw new NotFoundException('Resumen no encontrado');
     return present(row);
   }
@@ -289,6 +295,71 @@ export class SummariesService {
   async resetProgress(id: string, userId: string) {
     await this.get(id, userId);
     await this.prisma.playbackProgress.deleteMany({ where: { userId, summaryId: id } });
+  }
+
+  /** Mueve un audio a la papelera: sigue en S3 y en la base, pero deja de verse y de reproducirse. */
+  async trash(id: string, userId: string) {
+    const row = await this.prisma.summary.findFirst({
+      where: { id, userId, status: SummaryStatus.READY, deletedAt: null },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Resumen no encontrado');
+    await this.prisma.summary.update({ where: { id }, data: { deletedAt: new Date() } });
+  }
+
+  async restore(id: string, userId: string) {
+    const row = await this.findTrashed(id, userId);
+    await this.prisma.summary.update({ where: { id: row.id }, data: { deletedAt: null } });
+    return this.load(row.id, userId);
+  }
+
+  async listTrash(userId: string) {
+    const rows = await this.prisma.summary.findMany({
+      where: { userId, deletedAt: { not: null } },
+      orderBy: { deletedAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        author: true,
+        sizeBytes: true,
+        durationSeconds: true,
+        deletedAt: true,
+        category: { select: { name: true } },
+      },
+    });
+    return rows.map(({ deletedAt, category, ...rest }) => ({
+      ...rest,
+      category: category.name,
+      deletedAt,
+      purgeAt: new Date(deletedAt!.getTime() + TRASH_RETENTION_DAYS * DAY_MS),
+    }));
+  }
+
+  /** Borrado definitivo: solo de audios que ya están en la papelera. */
+  async deleteForever(id: string, userId: string) {
+    const row = await this.findTrashed(id, userId);
+    if (!(await this.purge.destroy(row))) {
+      throw new BadGatewayException('No se pudo eliminar el archivo; inténtalo de nuevo más tarde');
+    }
+  }
+
+  async emptyTrash(userId: string) {
+    const rows = await this.prisma.summary.findMany({
+      where: { userId, deletedAt: { not: null } },
+      select: { id: true, s3Key: true },
+    });
+    let deleted = 0;
+    for (const row of rows) if (await this.purge.destroy(row)) deleted++;
+    return { deleted, failed: rows.length - deleted };
+  }
+
+  private async findTrashed(id: string, userId: string) {
+    const row = await this.prisma.summary.findFirst({
+      where: { id, userId, deletedAt: { not: null } },
+      select: { id: true, s3Key: true },
+    });
+    if (!row) throw new NotFoundException('Resumen no encontrado en la papelera');
+    return row;
   }
 
   async playback(id: string, userId: string) {

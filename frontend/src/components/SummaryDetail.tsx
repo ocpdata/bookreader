@@ -6,10 +6,11 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { getPlaybackUrl, getSummary, resetProgress, saveProgress, setFavorite } from '../api'
+import { deleteSummary, getPlaybackUrl, getSummary, resetProgress, saveProgress, setFavorite } from '../api'
 import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
+import ConfirmDialog from './ConfirmDialog'
 
 export default function SummaryDetail() {
   const { id = '' } = useParams()
@@ -21,6 +22,8 @@ export default function SummaryDetail() {
   const [startAt, setStartAt] = useState(0)
   const [playerKey, setPlayerKey] = useState(0)
   const [favorite, setFavoriteState] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const refreshed = useRef(false)
   // Durante "Reiniciar" se ignoran los guardados del reproductor que se desmonta.
   const suppressSave = useRef(false)
@@ -82,6 +85,22 @@ export default function SummaryDetail() {
     } catch (e) {
       setFavoriteState(!value)
       setError((e as Error).message)
+    }
+  }
+
+  async function moveToTrash() {
+    if (!summary) return
+    setDeleting(true)
+    // El reproductor se desmonta al salir y guarda su posición: se ignora para no recrear progreso.
+    suppressSave.current = true
+    try {
+      await deleteSummary(id)
+      navigate('/biblioteca', { replace: true, state: { trashed: { id, title: summary.title } } })
+    } catch (e) {
+      suppressSave.current = false
+      setError((e as Error).message)
+      setDeleting(false)
+      setConfirmingDelete(false)
     }
   }
 
@@ -172,7 +191,20 @@ export default function SummaryDetail() {
               Reiniciar
             </Button>
             <Button onClick={() => navigate(`/audios/${summary.id}/editar`)}>Editar</Button>
+            <Button color="error" onClick={() => setConfirmingDelete(true)} sx={{ ml: 'auto' }}>
+              Eliminar
+            </Button>
           </Stack>
+          <ConfirmDialog
+            open={confirmingDelete}
+            title="¿Mover a la papelera?"
+            message={`«${summary.title}» se moverá a la papelera. Podrás restaurarlo durante 30 días.`}
+            confirmLabel="Mover a la papelera"
+            destructive
+            busy={deleting}
+            onConfirm={moveToTrash}
+            onCancel={() => setConfirmingDelete(false)}
+          />
         </>
       )}
     </Stack>

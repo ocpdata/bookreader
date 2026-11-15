@@ -18,3 +18,21 @@ export function formatClock(totalSeconds: number): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
+
+/** 14073829 -> "13,4 MB" */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${value.toLocaleString('es', { maximumFractionDigits: 1 })} ${units[unit]}`
+}
+
+/** "2026-11-15T00:10:00Z" -> "15 nov 2026" */
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' })
+}

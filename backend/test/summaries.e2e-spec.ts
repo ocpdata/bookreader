@@ -8,6 +8,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
+import { PurgeService } from '../src/summaries/purge.service';
 
 const USER_B = '00000000-0000-4000-8000-0000000000b2';
 const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name));
@@ -15,6 +16,23 @@ const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name)
 /** S3 simulado: los "objetos" subidos viven en memoria; la duración se lee con el parser real. */
 class FakeStorage {
   objects = new Map<string, Buffer>();
+  /** Claves que S3 "borró" y claves cuyo borrado debe fallar (para probar los reintentos). */
+  deleted: string[] = [];
+  failKeys = new Set<string>();
+  failAllDeletes = false;
+  deleteObject = async (key: string) => {
+    if (this.failAllDeletes || this.failKeys.has(key)) throw new Error('S3 no disponible');
+    // Se ejecuta la validación real de claves del servicio con un cliente S3 simulado.
+    const real = Object.create(StorageService.prototype) as StorageService;
+    (real as any).bucket = 'x';
+    (real as any).s3 = {
+      send: async (command: any) => {
+        this.deleted.push(command.input.Key);
+        this.objects.delete(command.input.Key);
+      },
+    };
+    await real.deleteObject(key);
+  };
   createUploadUrl = async (key: string) => `https://s3.test/upload/${key}`;
   createPlaybackUrl = async (key: string) => `https://s3.test/play/${key}`;
   getObjectSize = async (key: string) => this.objects.get(key)?.length ?? null;
@@ -37,6 +55,7 @@ describe('Summaries (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
   let storage: FakeStorage;
+  let purge: PurgeService;
   let categoryId: string;
 
   const as = (userId: string | undefined) => ({ 'x-test-user': userId ?? '' });
@@ -81,6 +100,7 @@ describe('Summaries (e2e)', () => {
       .overrideProvider(USER_RESOLVER)
       .useValue({ resolve: (req: any) => req.headers['x-test-user'] || undefined })
       .compile();
+    purge = module.get(PurgeService);
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -98,6 +118,9 @@ describe('Summaries (e2e)', () => {
 
   beforeEach(async () => {
     storage.objects.clear();
+    storage.deleted = [];
+    storage.failKeys.clear();
+    storage.failAllDeletes = false;
     // Cada prueba parte de cero: la base persiste entre ejecuciones y las etiquetas no dependen de un audio.
     await prisma.summary.deleteMany();
     await prisma.tag.deleteMany();
@@ -577,6 +600,219 @@ describe('Summaries (e2e)', () => {
       expect(data.continueListening[0]).toMatchObject({ tags: ['Ventas'], favorite: false });
       expect(data.recent[0].progress).toMatchObject({ positionSeconds: 2 });
     });
+  });
+
+  describe('papelera y limpieza', () => {
+    const api = () => request(app.getHttpServer());
+    const trash = (id: string, userId = DEFAULT_USER_ID) => api().delete(`/api/summaries/${id}`).set(as(userId));
+    const restore = (id: string, userId = DEFAULT_USER_ID) => api().post(`/api/summaries/${id}/restore`).set(as(userId));
+    const trashList = async (userId = DEFAULT_USER_ID) => (await api().get('/api/trash').set(as(userId))).body;
+    const forever = (id: string, userId = DEFAULT_USER_ID) => api().delete(`/api/trash/${id}`).set(as(userId));
+    const keyOf = async (id: string) => (await prisma.summary.findUniqueOrThrow({ where: { id } })).s3Key;
+    const DAY = 24 * 3600 * 1000;
+
+    it('mover a la papelera lo oculta en todas partes sin borrar nada', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { tags: ['Ventas'] });
+      await api().put(`/api/summaries/${s.id}/favorite`).set(as(DEFAULT_USER_ID));
+      await api().put(`/api/summaries/${s.id}/progress`).set(as(DEFAULT_USER_ID)).send({ positionSeconds: 2 });
+
+      await trash(s.id).then((r) => expect(r.status).toBe(204));
+
+      expect((await api().get('/api/summaries').set(as(DEFAULT_USER_ID))).body).toEqual([]);
+      expect((await api().get('/api/home').set(as(DEFAULT_USER_ID))).body).toMatchObject({
+        total: 0,
+        recent: [],
+        favorites: [],
+        continueListening: [],
+        categories: [],
+      });
+      expect((await api().get('/api/tags').set(as(DEFAULT_USER_ID))).body).toEqual([]);
+      await api().get(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).expect(404);
+      await api().post(`/api/summaries/${s.id}/playback`).set(as(DEFAULT_USER_ID)).expect(404);
+      await api().patch(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).send({ title: 'x' }).expect(404);
+      await api().put(`/api/summaries/${s.id}/progress`).set(as(DEFAULT_USER_ID)).send({ positionSeconds: 3 }).expect(404);
+      await api().put(`/api/summaries/${s.id}/favorite`).set(as(DEFAULT_USER_ID)).expect(404);
+      await trash(s.id).then((r) => expect(r.status).toBe(404)); // ya está en la papelera
+
+      // Nada se borró: ni el archivo ni la fila.
+      expect(storage.deleted).toEqual([]);
+      expect(storage.objects.has(await keyOf(s.id))).toBe(true);
+    });
+
+    it('la papelera lista lo eliminado con la fecha de borrado definitivo', async () => {
+      const a = await createReady(DEFAULT_USER_ID, { title: 'A' });
+      const b = await createReady(DEFAULT_USER_ID, { title: 'B' });
+      await createReady(DEFAULT_USER_ID, { title: 'C vivo' });
+      await trash(a.id);
+      await new Promise((r) => setTimeout(r, 1100));
+      await trash(b.id);
+
+      const list = await trashList();
+      expect(list.map((i: any) => i.title)).toEqual(['B', 'A']); // el más reciente primero
+      const first = list[0];
+      expect(Object.keys(first).sort()).toEqual(
+        ['author', 'category', 'deletedAt', 'durationSeconds', 'id', 'purgeAt', 'sizeBytes', 'title'].sort(),
+      );
+      expect(new Date(first.purgeAt).getTime() - new Date(first.deletedAt).getTime()).toBe(30 * DAY);
+    });
+
+    it('restaurar devuelve el audio con etiquetas, favorito y progreso intactos', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { tags: ['Ventas'] });
+      await api().put(`/api/summaries/${s.id}/favorite`).set(as(DEFAULT_USER_ID));
+      await api().put(`/api/summaries/${s.id}/progress`).set(as(DEFAULT_USER_ID)).send({ positionSeconds: 2 });
+      await trash(s.id);
+
+      const res = await restore(s.id);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: s.id, tags: ['Ventas'], favorite: true, progress: { positionSeconds: 2 } });
+      expect((await api().get('/api/summaries').set(as(DEFAULT_USER_ID))).body).toHaveLength(1);
+      expect(await trashList()).toEqual([]);
+      await restore(s.id).then((r) => expect(r.status).toBe(404)); // ya no está en la papelera
+    });
+
+    it('otro usuario no puede eliminar, restaurar ni borrar definitivamente', async () => {
+      const s = await createReady(DEFAULT_USER_ID);
+      await trash(s.id, USER_B).then((r) => expect(r.status).toBe(404));
+      await trash(s.id);
+      await restore(s.id, USER_B).then((r) => expect(r.status).toBe(404));
+      await forever(s.id, USER_B).then((r) => expect(r.status).toBe(404));
+      expect(await trashList(USER_B)).toEqual([]);
+      expect((await api().delete('/api/trash').set(as(USER_B))).body).toEqual({ deleted: 0, failed: 0 });
+
+      // Nada cambió para el dueño.
+      expect(await trashList()).toHaveLength(1);
+      expect(storage.deleted).toEqual([]);
+      expect(await prisma.summary.count({ where: { id: s.id } })).toBe(1);
+    });
+
+    it('el borrado definitivo solo vale desde la papelera y borra el archivo exacto y la fila', async () => {
+      const s = await createReady(DEFAULT_USER_ID);
+      const other = await createReady(DEFAULT_USER_ID, { title: 'Otro' });
+      const key = await keyOf(s.id);
+
+      await forever(s.id).then((r) => expect(r.status).toBe(404)); // vivo: no se puede borrar así
+      expect(storage.deleted).toEqual([]);
+
+      await trash(s.id);
+      await forever(s.id).then((r) => expect(r.status).toBe(204));
+      expect(storage.deleted).toEqual([key]);
+      expect(await prisma.summary.count({ where: { id: s.id } })).toBe(0);
+      expect(await prisma.summary.count({ where: { id: other.id } })).toBe(1);
+      expect(storage.objects.has(await keyOf(other.id))).toBe(true);
+    });
+
+    it('si S3 falla el audio no se pierde y se puede reintentar', async () => {
+      const s = await createReady(DEFAULT_USER_ID);
+      await trash(s.id);
+      storage.failAllDeletes = true;
+      await forever(s.id).then((r) => expect(r.status).toBe(502));
+      expect(await prisma.summary.count({ where: { id: s.id } })).toBe(1);
+      expect(await trashList()).toHaveLength(1);
+
+      storage.failAllDeletes = false;
+      await forever(s.id).then((r) => expect(r.status).toBe(204));
+      expect(await prisma.summary.count({ where: { id: s.id } })).toBe(0);
+    });
+
+    it('vaciar la papelera borra solo la del usuario', async () => {
+      const a1 = await createReady(DEFAULT_USER_ID, { title: 'A1' });
+      const a2 = await createReady(DEFAULT_USER_ID, { title: 'A2' });
+      const alive = await createReady(DEFAULT_USER_ID, { title: 'Vivo' });
+      const b = await createReady(USER_B, { title: 'B' });
+      await trash(a1.id);
+      await trash(a2.id);
+      await trash(b.id, USER_B);
+
+      const res = await api().delete('/api/trash').set(as(DEFAULT_USER_ID));
+      expect(res.body).toEqual({ deleted: 2, failed: 0 });
+      expect(await prisma.summary.findMany({ select: { title: true }, orderBy: { title: 'asc' } })).toEqual([
+        { title: 'B' },
+        { title: 'Vivo' },
+      ]);
+      expect(await trashList(USER_B)).toHaveLength(1);
+      expect(storage.objects.has(await keyOf(alive.id))).toBe(true);
+    });
+
+    it('la purga borra la papelera vencida y las cargas abandonadas, y nada más', async () => {
+      const alive = await createReady(DEFAULT_USER_ID, { title: 'Vivo' });
+      const trashed = await createReady(DEFAULT_USER_ID, { title: 'En papelera' });
+      await trash(trashed.id);
+      const pending = await createSummary(DEFAULT_USER_ID, { title: 'Pendiente' });
+      const pendingId = pending.body.summary.id as string;
+      storage.objects.set(pending.body.summary.s3Key, Buffer.from('a medias'));
+      const now = Date.now();
+
+      // 2 horas: ni la papelera (30 días) ni la carga pendiente (24 h) vencen.
+      expect(await purge.run(new Date(now + 2 * 3600 * 1000))).toEqual({ trashExpired: 0, pendingStale: 0, failed: 0 });
+      // 25 horas: vence la carga abandonada, no la papelera.
+      expect(await purge.run(new Date(now + 25 * 3600 * 1000))).toEqual({ trashExpired: 0, pendingStale: 1, failed: 0 });
+      expect(await prisma.summary.count({ where: { id: pendingId } })).toBe(0);
+      expect(await prisma.summary.count({ where: { id: trashed.id } })).toBe(1);
+      // 31 días: vence la papelera.
+      expect(await purge.run(new Date(now + 31 * DAY))).toEqual({ trashExpired: 1, pendingStale: 0, failed: 0 });
+      expect(await prisma.summary.count({ where: { id: trashed.id } })).toBe(0);
+
+      // El audio vivo nunca se toca, por viejo que sea.
+      expect(await purge.run(new Date(now + 365 * DAY))).toEqual({ trashExpired: 0, pendingStale: 0, failed: 0 });
+      expect(await prisma.summary.count({ where: { id: alive.id } })).toBe(1);
+      expect(storage.objects.has(await keyOf(alive.id))).toBe(true);
+    });
+
+    it('un fallo de S3 en la purga conserva la fila y no frena el resto', async () => {
+      const a = await createReady(DEFAULT_USER_ID, { title: 'A' });
+      const b = await createReady(DEFAULT_USER_ID, { title: 'B' });
+      await trash(a.id);
+      await trash(b.id);
+      storage.failKeys.add(await keyOf(a.id));
+
+      const future = new Date(Date.now() + 31 * DAY);
+      expect(await purge.run(future)).toEqual({ trashExpired: 1, pendingStale: 0, failed: 1 });
+      expect(await prisma.summary.count({ where: { id: a.id } })).toBe(1); // se reintenta en la próxima
+      expect(await prisma.summary.count({ where: { id: b.id } })).toBe(0);
+
+      storage.failKeys.clear();
+      expect(await purge.run(future)).toEqual({ trashExpired: 1, pendingStale: 0, failed: 0 });
+    });
+
+    it('nunca borra una clave con forma inesperada', async () => {
+      const s = await insertWithKey('audios/../otro/audio.mp3');
+      const prefix = await insertWithKey('audios/');
+      const other = await insertWithKey('covers/00000000-0000-4000-8000-000000000001/audio.mp3');
+      for (const row of [s, prefix, other]) {
+        await prisma.summary.update({ where: { id: row.id }, data: { deletedAt: new Date(Date.now() - 40 * DAY) } });
+      }
+      expect(await purge.run()).toEqual({ trashExpired: 0, pendingStale: 0, failed: 3 });
+      expect(storage.deleted).toEqual([]);
+      expect(await prisma.summary.count()).toBe(3);
+    });
+
+    it('acepta las dos formas de clave válidas (con y sin usuario)', async () => {
+      const withUser = await insertWithKey(
+        'audios/00000000-0000-4000-8000-000000000001/11111111-1111-4111-8111-111111111111/audio.mp3',
+      );
+      const legacy = await insertWithKey('audios/22222222-2222-4222-8222-222222222222/audio.m4a');
+      for (const row of [withUser, legacy]) {
+        await prisma.summary.update({ where: { id: row.id }, data: { deletedAt: new Date(Date.now() - 40 * DAY) } });
+      }
+      expect(await purge.run()).toEqual({ trashExpired: 2, pendingStale: 0, failed: 0 });
+      expect(storage.deleted.sort()).toEqual([withUser.s3Key, legacy.s3Key].sort());
+    });
+
+    async function insertWithKey(s3Key: string) {
+      return prisma.summary.create({
+        data: {
+          userId: DEFAULT_USER_ID,
+          title: s3Key,
+          author: 'Autor',
+          categoryId,
+          s3Key,
+          originalFilename: 'a.mp3',
+          sizeBytes: 10,
+          contentType: 'audio/mpeg',
+          status: 'READY',
+        },
+      });
+    }
   });
 
   it('valida los datos de entrada', async () => {

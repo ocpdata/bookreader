@@ -19,9 +19,10 @@ interface Props {
   activeTag?: string
   onToggleFavorite: (summary: Summary) => void
   onTagClick?: (tag: string) => void
+  onDelete?: (summary: Summary) => void
 }
 
-export default function SummaryCard({ summary: s, compact = false, activeTag = '', onToggleFavorite, onTagClick }: Props) {
+export default function SummaryCard({ summary: s, compact = false, activeTag = '', onToggleFavorite, onTagClick, onDelete }: Props) {
   const navigate = useNavigate()
   const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
   const progress = s.progress
@@ -79,6 +80,11 @@ export default function SummaryCard({ summary: s, compact = false, activeTag = '
       <CardActions>
         <Button onClick={() => navigate(`/audios/${s.id}`)}>{inProgress ? 'Continuar' : 'Escuchar'}</Button>
         {!compact && <Button onClick={() => navigate(`/audios/${s.id}/editar`)}>Editar</Button>}
+        {!compact && onDelete && (
+          <Button color="error" onClick={() => onDelete(s)} sx={{ ml: 'auto' }}>
+            Eliminar
+          </Button>
+        )}
       </CardActions>
     </Card>
   )

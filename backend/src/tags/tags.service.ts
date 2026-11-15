@@ -48,10 +48,13 @@ export class TagsService {
       where: {
         userId,
         ...(term ? { name: { contains: term } } : {}),
-        summaries: { some: { summary: { status: SummaryStatus.READY } } },
+        summaries: { some: { summary: { status: SummaryStatus.READY, deletedAt: null } } },
       },
       include: {
-        summaries: { where: { summary: { status: SummaryStatus.READY } }, select: { summaryId: true } },
+        summaries: {
+          where: { summary: { status: SummaryStatus.READY, deletedAt: null } },
+          select: { summaryId: true },
+        },
       },
     });
     return tags

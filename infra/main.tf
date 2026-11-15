@@ -182,8 +182,9 @@ data "aws_iam_policy_document" "ec2_assume" {
 
 data "aws_iam_policy_document" "s3_audios" {
   statement {
-    sid       = "AudioObjects"
-    actions   = ["s3:GetObject", "s3:PutObject"]
+    sid = "AudioObjects"
+    # DeleteObject: borrado definitivo desde la papelera y limpieza de cargas abandonadas.
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
     resources = ["arn:aws:s3:::${var.s3_bucket_name}/audios/*"]
   }
 

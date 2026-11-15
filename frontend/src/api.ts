@@ -1,4 +1,13 @@
-import type { Category, HomeData, LibraryFilters, Progress, Summary, SummaryFields, TagSuggestion } from './types'
+import type {
+  Category,
+  HomeData,
+  LibraryFilters,
+  Progress,
+  Summary,
+  SummaryFields,
+  TagSuggestion,
+  TrashItem,
+} from './types'
 
 const AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -62,6 +71,17 @@ export const getHome = async () => {
   await settlePendingSaves()
   return request<HomeData>('/home')
 }
+
+// Papelera: eliminar mueve el audio a la papelera (recuperable); el borrado definitivo es aparte.
+export const deleteSummary = (id: string) => request<void>(`/summaries/${id}`, { method: 'DELETE' })
+
+export const restoreSummary = (id: string) => request<Summary>(`/summaries/${id}/restore`, { method: 'POST' })
+
+export const listTrash = () => request<TrashItem[]>('/trash')
+
+export const deleteForever = (id: string) => request<void>(`/trash/${id}`, { method: 'DELETE' })
+
+export const emptyTrash = () => request<{ deleted: number; failed: number }>('/trash', { method: 'DELETE' })
 
 export const listTags = (query = '') =>
   request<TagSuggestion[]>(`/tags${query ? `?query=${encodeURIComponent(query)}` : ''}`)

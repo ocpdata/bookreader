@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { parseStream } from 'music-metadata';
 import { Readable } from 'node:stream';
@@ -8,6 +14,12 @@ import { Readable } from 'node:stream';
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const PLAYBACK_TTL_SECONDS = 60 * 60;
 const AUDIO_PARSE_TIMEOUT_MS = 45_000;
+
+/**
+ * Únicas claves que el servidor puede borrar: `audios/{userId}/{uuid}/audio.ext` o el formato
+ * anterior `audios/{uuid}/audio.ext`. Una clave con otra forma (prefijos, `..`, vacía) se rechaza.
+ */
+const DELETABLE_KEY = /^audios\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?\/audio\.(mp3|m4a)$/;
 
 @Injectable()
 export class StorageService {
@@ -69,5 +81,11 @@ export class StorageService {
       clearTimeout(timer);
       body?.destroy();
     }
+  }
+
+  /** Borra un objeto (idempotente: si no existe, tampoco falla). Rechaza claves con forma inesperada. */
+  async deleteObject(key: string): Promise<void> {
+    if (!DELETABLE_KEY.test(key)) throw new Error(`Clave no permitida para borrar: ${key}`);
+    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }

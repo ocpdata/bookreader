@@ -28,6 +28,19 @@ export class SummariesController {
     return this.summaries.complete(id, userId);
   }
 
+  /** Mueve a la papelera (recuperable). El borrado definitivo está en /trash. */
+  @Delete(':id')
+  @HttpCode(204)
+  async trash(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.summaries.trash(id, userId);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(200)
+  restore(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.summaries.restore(id, userId);
+  }
+
   @Patch(':id')
   update(
     @CurrentUser() userId: string,

@@ -53,6 +53,11 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
 | PUT | `/api/summaries/:id/progress` | Guardar la posición (`positionSeconds`) y/o `completed` |
 | DELETE | `/api/summaries/:id/progress` | Reiniciar: borra el progreso |
+| DELETE | `/api/summaries/:id` | Mover a la papelera (recuperable; el archivo sigue en S3) |
+| POST | `/api/summaries/:id/restore` | Restaurar desde la papelera |
+| GET | `/api/trash` | Audios en la papelera, con la fecha de borrado definitivo (`purgeAt`) |
+| DELETE | `/api/trash/:id` | Borrado definitivo de un audio que ya está en la papelera |
+| DELETE | `/api/trash` | Vaciar la papelera del usuario |
 | PUT / DELETE | `/api/summaries/:id/favorite` | Marcar / quitar de favoritos |
 | GET | `/api/tags?query=` | Etiquetas del usuario con su número de audios (para autocompletar y filtrar) |
 | GET | `/api/home` | Datos de la pantalla de inicio: `continueListening` (hasta 10), `recent` (8), `favorites` (8) y `categories` con su conteo |
@@ -66,7 +71,13 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 
 ## Pantallas
 
-`/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
+`/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. `/papelera` lista lo eliminado. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
+
+## Papelera y limpieza
+
+"Eliminar" mueve el audio a la papelera: deja de verse y reproducirse, pero conserva su fila, su archivo de S3, sus etiquetas, favorito y progreso, así que **restaurar** lo devuelve intacto (la interfaz ofrece "Deshacer"). Se borra de forma definitiva desde `/papelera` (con confirmación), al vaciarla, o automáticamente a los 30 días (`TRASH_RETENTION_DAYS`).
+
+Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y las cargas que nunca se completaron en 24 h; se desactiva con `PURGE_ENABLED=false` (en desarrollo local conviene dejarlo apagado). Salvaguardas: siempre se borra primero el archivo y después la fila (si S3 falla, la fila se conserva y se reintenta); el servidor solo borra la clave exacta guardada en la fila y solo si tiene la forma `audios/{userId}/{uuid}/audio.mp3|m4a` (o el formato anterior sin usuario); cada ejecución procesa como máximo 100 filas; un audio vivo nunca se purga. El rol de IAM de la VM necesita `s3:DeleteObject` sobre `audios/*` (definido en `infra/`).
 
 ## Etiquetas y favoritos
 

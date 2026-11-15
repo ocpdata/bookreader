@@ -10,6 +10,7 @@ import { listCategories } from './api'
 import HomeView from './components/HomeView'
 import LibraryView from './components/LibraryView'
 import SummaryDetail from './components/SummaryDetail'
+import TrashView from './components/TrashView'
 import SummaryForm from './components/SummaryForm'
 import type { Category } from './types'
 
@@ -41,6 +42,9 @@ export default function App() {
           <Button color="inherit" component={NavLink} to="/biblioteca" sx={{ '&.active': { textDecoration: 'underline' } }}>
             Biblioteca
           </Button>
+          <Button color="inherit" component={NavLink} to="/papelera" sx={{ '&.active': { textDecoration: 'underline' } }}>
+            Papelera
+          </Button>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 3 }}>
@@ -52,6 +56,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomeView />} />
           <Route path="/biblioteca" element={<LibraryView categories={categories} />} />
+          <Route path="/papelera" element={<TrashView />} />
           <Route path="/audios/nuevo" element={<SummaryForm categories={categories} />} />
           <Route path="/audios/:id" element={<SummaryDetail />} />
           <Route path="/audios/:id/editar" element={<SummaryForm categories={categories} />} />

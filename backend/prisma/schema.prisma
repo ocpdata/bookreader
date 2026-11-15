@@ -51,6 +51,8 @@ model Summary {
   narrator         String?            @db.VarChar(200)
   description      String?            @db.Text
   durationSeconds  Int?               @map("duration_seconds")
+  // Papelera: un audio eliminado conserva su fila y su archivo hasta que expire la retención.
+  deletedAt        DateTime?          @map("deleted_at")
   categoryId       String             @map("category_id") @db.VarChar(36)
   category         Category           @relation(fields: [categoryId], references: [id])
   s3Key            String             @unique @map("s3_key") @db.VarChar(255)
@@ -63,6 +65,8 @@ model Summary {
 
   @@index([categoryId])
   @@index([userId, createdAt])
+  @@index([userId, deletedAt])
+  @@index([status, createdAt])
   @@map("summaries")
 }
 

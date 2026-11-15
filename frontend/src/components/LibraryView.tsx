@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Snackbar from '@mui/material/Snackbar'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import Typography from '@mui/material/Typography'
-import { listSummaries, listTags, setFavorite } from '../api'
+import { deleteSummary, listSummaries, listTags, restoreSummary, setFavorite } from '../api'
 import type { Category, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
+import ConfirmDialog from './ConfirmDialog'
 import SummaryCard from './SummaryCard'
 
 const SORTS: { value: SortOption; label: string }[] = [
@@ -32,6 +34,7 @@ interface Props {
 
 export default function LibraryView({ categories }: Props) {
   const navigate = useNavigate()
+  const location = useLocation()
   // Filtros y orden viven en la URL: el botón "atrás" vuelve a la misma búsqueda.
   const [params, setParams] = useSearchParams()
   const categoryId = params.get('categoria') ?? ''
@@ -46,6 +49,11 @@ export default function LibraryView({ categories }: Props) {
   const [tags, setTags] = useState<TagSuggestion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [toDelete, setToDelete] = useState<Summary | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  // Último audio movido a la papelera, para ofrecer "Deshacer" (también cuando se eliminó desde la ficha).
+  const [trashed, setTrashed] = useState<{ id: string; title: string } | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const updateParams = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params)
@@ -55,6 +63,15 @@ export default function LibraryView({ categories }: Props) {
     }
     setParams(next, { replace: true })
   }
+
+  useEffect(() => {
+    const fromDetail = (location.state as { trashed?: { id: string; title: string } } | null)?.trashed
+    if (!fromDetail) return
+    setTrashed(fromDetail)
+    // Se limpia el estado para que no reaparezca al recargar.
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -86,7 +103,7 @@ export default function LibraryView({ categories }: Props) {
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, categoryId, tag, favorite, status, sort])
+  }, [debouncedSearch, categoryId, tag, favorite, status, sort, reloadKey])
 
   async function toggleFavorite(summary: Summary) {
     const value = !summary.favorite
@@ -103,6 +120,32 @@ export default function LibraryView({ categories }: Props) {
     } catch (e) {
       setError((e as Error).message)
       setSummaries((items) => (items.some((s) => s.id === summary.id) ? items.map((s) => (s.id === summary.id ? { ...s, favorite: !value } : s)) : [...items, { ...summary, favorite: !value }]))
+    }
+  }
+
+  async function confirmDelete() {
+    if (!toDelete) return
+    setDeleting(true)
+    try {
+      await deleteSummary(toDelete.id)
+      setSummaries((items) => items.filter((s) => s.id !== toDelete.id))
+      setTrashed({ id: toDelete.id, title: toDelete.title })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setDeleting(false)
+      setToDelete(null)
+    }
+  }
+
+  async function undoDelete() {
+    if (!trashed) return
+    try {
+      await restoreSummary(trashed.id)
+      setTrashed(null)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setError((e as Error).message)
     }
   }
 
@@ -227,8 +270,31 @@ export default function LibraryView({ categories }: Props) {
           activeTag={tag}
           onToggleFavorite={toggleFavorite}
           onTagClick={(name) => updateParams({ etiqueta: name })}
+          onDelete={setToDelete}
         />
       ))}
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="¿Mover a la papelera?"
+        message={`«${toDelete?.title ?? ''}» se moverá a la papelera. Podrás restaurarlo durante 30 días.`}
+        confirmLabel="Mover a la papelera"
+        destructive
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setToDelete(null)}
+      />
+      <Snackbar
+        open={trashed !== null}
+        autoHideDuration={8000}
+        onClose={(_, reason) => reason !== 'clickaway' && setTrashed(null)}
+        message={trashed ? `«${trashed.title}» se movió a la papelera` : ''}
+        action={
+          <Button color="inherit" size="small" onClick={undoDelete}>
+            Deshacer
+          </Button>
+        }
+      />
     </Stack>
   )
 }
