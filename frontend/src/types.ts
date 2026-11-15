@@ -55,3 +55,17 @@ export interface LibraryFilters {
   status: StatusFilter | ''
   sort: SortOption
 }
+
+export interface CategoryCount {
+  id: string
+  name: string
+  count: number
+}
+
+export interface HomeData {
+  total: number
+  continueListening: Summary[]
+  recent: Summary[]
+  favorites: Summary[]
+  categories: CategoryCount[]
+}

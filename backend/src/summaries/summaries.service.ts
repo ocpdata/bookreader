@@ -22,6 +22,10 @@ const ORDER_BY: Record<SortOption, Prisma.SummaryOrderByWithRelationInput[]> = {
   listened: [{ createdAt: 'desc' }],
 };
 
+/** Tamaño de las secciones de la pantalla de inicio. */
+const HOME_CONTINUE_LIMIT = 10;
+const HOME_SECTION_LIMIT = 8;
+
 /** Fracción de la duración a partir de la cual el audio se considera terminado. */
 const COMPLETE_RATIO = 0.95;
 
@@ -92,6 +96,52 @@ export class SummariesService {
       rows.sort((a, b) => listenedAt(b) - listenedAt(a));
     }
     return rows;
+  }
+
+  /** Datos de la pantalla de inicio en una sola consulta: qué retomar, lo nuevo, favoritos y categorías. */
+  async home(userId: string) {
+    const ready = { userId, status: SummaryStatus.READY };
+    const [continueRows, recent, favoriteRows, byCategory, total] = await Promise.all([
+      // Audios empezados y no terminados, el último escuchado primero.
+      this.prisma.playbackProgress.findMany({
+        where: { userId, completed: false, positionSeconds: { gt: 0 }, summary: ready },
+        orderBy: { updatedAt: 'desc' },
+        take: HOME_CONTINUE_LIMIT,
+        include: { summary: { include: withRelations(userId) } },
+      }),
+      this.prisma.summary.findMany({
+        where: ready,
+        orderBy: { createdAt: 'desc' },
+        take: HOME_SECTION_LIMIT,
+        include: withRelations(userId),
+      }),
+      // Favoritos: el marcado más recientemente primero.
+      this.prisma.favorite.findMany({
+        where: { userId, summary: ready },
+        orderBy: { createdAt: 'desc' },
+        take: HOME_SECTION_LIMIT,
+        include: { summary: { include: withRelations(userId) } },
+      }),
+      this.prisma.summary.groupBy({ by: ['categoryId'], where: ready, _count: { _all: true } }),
+      this.prisma.summary.count({ where: ready }),
+    ]);
+
+    const names = await this.prisma.category.findMany({ where: { id: { in: byCategory.map((c) => c.categoryId) } } });
+    const categories = byCategory
+      .map((c) => ({
+        id: c.categoryId,
+        name: names.find((n) => n.id === c.categoryId)?.name ?? '',
+        count: c._count._all,
+      }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'es'));
+
+    return {
+      total,
+      continueListening: continueRows.map((row) => present(row.summary)),
+      recent: recent.map(present),
+      favorites: favoriteRows.map((row) => present(row.summary)),
+      categories,
+    };
   }
 
   /** Un audio ajeno se trata igual que uno inexistente (404) para no revelar que existe. */

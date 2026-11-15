@@ -1,4 +1,4 @@
-import type { Category, LibraryFilters, Progress, Summary, SummaryFields, TagSuggestion } from './types'
+import type { Category, HomeData, LibraryFilters, Progress, Summary, SummaryFields, TagSuggestion } from './types'
 
 const AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -56,6 +56,11 @@ export async function listSummaries({ search, categoryId, tag, favorite, status,
   if (status) params.set('status', status)
   params.set('sort', sort)
   return request<Summary[]>(`/summaries?${params}`)
+}
+
+export const getHome = async () => {
+  await settlePendingSaves()
+  return request<HomeData>('/home')
 }
 
 export const listTags = (query = '') =>

@@ -88,7 +88,7 @@ export default function SummaryForm({ categories }: Props) {
     try {
       if (id) await updateSummary(id, fields)
       else await createSummary(fields, file!)
-      navigate('/')
+      navigate('/biblioteca')
     } catch (err) {
       setError((err as Error).message)
       setSaving(false)

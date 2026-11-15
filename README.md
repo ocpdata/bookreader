@@ -55,6 +55,7 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | DELETE | `/api/summaries/:id/progress` | Reiniciar: borra el progreso |
 | PUT / DELETE | `/api/summaries/:id/favorite` | Marcar / quitar de favoritos |
 | GET | `/api/tags?query=` | Etiquetas del usuario con su número de audios (para autocompletar y filtrar) |
+| GET | `/api/home` | Datos de la pantalla de inicio: `continueListening` (hasta 10), `recent` (8), `favorites` (8) y `categories` con su conteo |
 | GET | `/api/health` | Estado de la API y de la base de datos |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{userId}/{uuid}/audio.ext`.
@@ -62,6 +63,10 @@ Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `aud
 ## Progreso de reproducción
 
 Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y la ficha la devuelven en `progress`. El reproductor guarda cada 10 s mientras suena y al pausar, saltar, terminar o salir de la pantalla. Reglas: al reabrir retoma desde la posición guardada, salvo que el audio esté terminado (entonces empieza de cero); se marca **terminado** al llegar al 95 % o al final, se mantiene hasta que se cambie a mano ("Marcar como pendiente") y "Reiniciar" borra el progreso.
+
+## Pantallas
+
+`/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
 
 ## Etiquetas y favoritos
 

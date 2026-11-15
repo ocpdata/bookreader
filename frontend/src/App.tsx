@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Link as RouterLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Link as RouterLink, NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
+import Button from '@mui/material/Button'
 import Alert from '@mui/material/Alert'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import { listCategories } from './api'
+import HomeView from './components/HomeView'
 import LibraryView from './components/LibraryView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
@@ -33,6 +35,12 @@ export default function App() {
           >
             📚 BookReader
           </Typography>
+          <Button color="inherit" component={NavLink} to="/" end sx={{ ml: 3, '&.active': { textDecoration: 'underline' } }}>
+            Inicio
+          </Button>
+          <Button color="inherit" component={NavLink} to="/biblioteca" sx={{ '&.active': { textDecoration: 'underline' } }}>
+            Biblioteca
+          </Button>
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 3 }}>
@@ -42,7 +50,8 @@ export default function App() {
           </Alert>
         )}
         <Routes>
-          <Route path="/" element={<LibraryView categories={categories} />} />
+          <Route path="/" element={<HomeView />} />
+          <Route path="/biblioteca" element={<LibraryView categories={categories} />} />
           <Route path="/audios/nuevo" element={<SummaryForm categories={categories} />} />
           <Route path="/audios/:id" element={<SummaryDetail />} />
           <Route path="/audios/:id/editar" element={<SummaryForm categories={categories} />} />

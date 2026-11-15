@@ -3,21 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
-import CardActions from '@mui/material/CardActions'
-import CardContent from '@mui/material/CardContent'
-import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
-import LinearProgress from '@mui/material/LinearProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import Typography from '@mui/material/Typography'
 import { listSummaries, listTags, setFavorite } from '../api'
-import { formatClock, formatDuration } from '../format'
 import type { Category, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
+import SummaryCard from './SummaryCard'
 
 const SORTS: { value: SortOption; label: string }[] = [
   { value: 'recent', label: 'Más recientes' },
@@ -226,65 +220,15 @@ export default function LibraryView({ categories }: Props) {
         <Typography color="text.secondary">No hay resúmenes que mostrar.</Typography>
       )}
 
-      {summaries.map((s) => {
-        const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
-        const progress = s.progress
-        const inProgress = !!progress && !progress.completed && progress.positionSeconds > 0
-        const percent =
-          inProgress && s.durationSeconds ? Math.min(100, (progress.positionSeconds / s.durationSeconds) * 100) : 0
-        return (
-          <Card key={s.id} variant="outlined">
-            <CardContent>
-              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <Typography variant="h6">{s.title}</Typography>
-                  {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
-                </Stack>
-                <IconButton
-                  onClick={() => toggleFavorite(s)}
-                  aria-label={s.favorite ? 'Quitar de favoritos' : 'Añadir a favoritos'}
-                  aria-pressed={s.favorite}
-                  color={s.favorite ? 'warning' : 'default'}
-                >
-                  {s.favorite ? '★' : '☆'}
-                </IconButton>
-              </Stack>
-              {s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
-              <Typography color="text.secondary">{meta}</Typography>
-              {s.narrator && (
-                <Typography variant="body2" color="text.secondary">
-                  Narra: {s.narrator}
-                </Typography>
-              )}
-              {s.tags.length > 0 && (
-                <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', mt: 1 }}>
-                  {s.tags.map((name) => (
-                    <Chip
-                      key={name}
-                      label={name}
-                      size="small"
-                      variant={name.toLowerCase() === tag.toLowerCase() ? 'filled' : 'outlined'}
-                      onClick={() => updateParams({ etiqueta: name })}
-                    />
-                  ))}
-                </Stack>
-              )}
-              {inProgress && (
-                <Box sx={{ mt: 1 }}>
-                  <LinearProgress variant="determinate" value={percent} aria-label="Avance" />
-                  <Typography variant="caption" color="text.secondary">
-                    Escuchado hasta {formatClock(progress.positionSeconds)}
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-            <CardActions>
-              <Button onClick={() => navigate(`/audios/${s.id}`)}>{inProgress ? 'Continuar' : 'Escuchar'}</Button>
-              <Button onClick={() => navigate(`/audios/${s.id}/editar`)}>Editar</Button>
-            </CardActions>
-          </Card>
-        )
-      })}
+      {summaries.map((s) => (
+        <SummaryCard
+          key={s.id}
+          summary={s}
+          activeTag={tag}
+          onToggleFavorite={toggleFavorite}
+          onTagClick={(name) => updateParams({ etiqueta: name })}
+        />
+      ))}
     </Stack>
   )
 }

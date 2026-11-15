@@ -133,7 +133,7 @@ export default function SummaryDetail() {
                   label={name}
                   size="small"
                   variant="outlined"
-                  onClick={() => navigate(`/?etiqueta=${encodeURIComponent(name)}`)}
+                  onClick={() => navigate(`/biblioteca?etiqueta=${encodeURIComponent(name)}`)}
                 />
               ))}
             </Stack>

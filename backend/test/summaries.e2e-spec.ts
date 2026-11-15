@@ -462,6 +462,123 @@ describe('Summaries (e2e)', () => {
     });
   });
 
+  describe('pantalla de inicio', () => {
+    const home = async (userId = DEFAULT_USER_ID) =>
+      (await request(app.getHttpServer()).get('/api/home').set(as(userId))).body;
+    const titles = (list: { title: string }[]) => list.map((s) => s.title);
+    const pause = () => new Promise((r) => setTimeout(r, 1100));
+
+    /** Inserta un audio READY directamente (sin pasar por S3) para probar límites sin tardar. */
+    async function insertReady(title: string, extra: Record<string, unknown> = {}, userId = DEFAULT_USER_ID) {
+      return prisma.summary.create({
+        data: {
+          userId,
+          title,
+          author: 'Autor',
+          categoryId,
+          s3Key: `audios/${userId}/${title}/audio.mp3`,
+          originalFilename: 'a.mp3',
+          sizeBytes: 1000,
+          contentType: 'audio/mpeg',
+          status: 'READY',
+          durationSeconds: 100,
+          ...extra,
+        },
+      });
+    }
+
+    it('devuelve todo vacío cuando no hay audios', async () => {
+      expect(await home()).toEqual({ total: 0, continueListening: [], recent: [], favorites: [], categories: [] });
+    });
+
+    it('continuar escuchando: empezados y no terminados, el último escuchado primero', async () => {
+      const a = await insertReady('A');
+      const b = await insertReady('B');
+      const done = await insertReady('Terminado');
+      const zero = await insertReady('En cero');
+      await insertReady('Sin escuchar');
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: a.id, positionSeconds: 10 } });
+      await pause();
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: b.id, positionSeconds: 20 } });
+      await prisma.playbackProgress.create({
+        data: { userId: DEFAULT_USER_ID, summaryId: done.id, positionSeconds: 95, completed: true },
+      });
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: zero.id, positionSeconds: 0 } });
+
+      const data = await home();
+      expect(titles(data.continueListening)).toEqual(['B', 'A']);
+      expect(data.continueListening[0].progress).toMatchObject({ positionSeconds: 20, completed: false });
+      expect(data.total).toBe(5);
+    });
+
+    it('agregados recientemente: los más nuevos primero y con límite de 8', async () => {
+      for (let i = 1; i <= 10; i++) {
+        await insertReady(`Audio ${String(i).padStart(2, '0')}`, { createdAt: new Date(Date.UTC(2026, 0, i)) });
+      }
+      const data = await home();
+      expect(data.recent).toHaveLength(8);
+      expect(titles(data.recent)).toEqual(
+        ['10', '09', '08', '07', '06', '05', '04', '03'].map((n) => `Audio ${n}`),
+      );
+      expect(data.total).toBe(10);
+    });
+
+    it('limita "continuar escuchando" a 10', async () => {
+      for (let i = 1; i <= 12; i++) {
+        const s = await insertReady(`E${i}`);
+        await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: s.id, positionSeconds: i } });
+      }
+      expect((await home()).continueListening).toHaveLength(10);
+    });
+
+    it('favoritos: el marcado más recientemente primero', async () => {
+      const a = await insertReady('A');
+      const b = await insertReady('B');
+      await insertReady('C');
+      await prisma.favorite.create({ data: { userId: DEFAULT_USER_ID, summaryId: a.id } });
+      await pause();
+      await prisma.favorite.create({ data: { userId: DEFAULT_USER_ID, summaryId: b.id } });
+      const data = await home();
+      expect(titles(data.favorites)).toEqual(['B', 'A']);
+      expect(data.favorites.every((s: any) => s.favorite === true)).toBe(true);
+    });
+
+    it('categorías: solo las que tienen audios, con su conteo', async () => {
+      const other = await prisma.category.upsert({ where: { name: 'Otra' }, update: {}, create: { name: 'Otra' } });
+      await prisma.category.upsert({ where: { name: 'Vacía' }, update: {}, create: { name: 'Vacía' } });
+      await insertReady('A');
+      await insertReady('B');
+      await insertReady('C', { categoryId: other.id });
+      const data = await home();
+      expect(data.categories).toEqual([
+        { id: categoryId, name: 'Prueba', count: 2 },
+        { id: other.id, name: 'Otra', count: 1 },
+      ]);
+    });
+
+    it('no incluye audios pendientes y no mezcla usuarios', async () => {
+      await createSummary(DEFAULT_USER_ID); // PENDING
+      const mine = await insertReady('Mío');
+      await prisma.favorite.create({ data: { userId: DEFAULT_USER_ID, summaryId: mine.id } });
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: mine.id, positionSeconds: 5 } });
+
+      const a = await home();
+      expect(a.total).toBe(1);
+      expect(titles(a.recent)).toEqual(['Mío']);
+
+      const b = await home(USER_B);
+      expect(b).toEqual({ total: 0, continueListening: [], recent: [], favorites: [], categories: [] });
+    });
+
+    it('incluye etiquetas y el progreso en cada tarjeta', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { tags: ['Ventas'] });
+      await request(app.getHttpServer()).put(`/api/summaries/${s.id}/progress`).set(as(DEFAULT_USER_ID)).send({ positionSeconds: 2 });
+      const data = await home();
+      expect(data.continueListening[0]).toMatchObject({ tags: ['Ventas'], favorite: false });
+      expect(data.recent[0].progress).toMatchObject({ positionSeconds: 2 });
+    });
+  });
+
   it('valida los datos de entrada', async () => {
     const bad = [
       { contentType: 'audio/wav' },
