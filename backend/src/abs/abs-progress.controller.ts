@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { AllowApiToken } from '../auth/allow-api-token.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AbsService, ProgressUpdate } from './abs.service';
@@ -99,23 +99,31 @@ export class AbsProgressController {
   }
 
   @Get('bookmarks')
-  bookmarks() {
-    return { bookmarks: [] };
+  async bookmarks(@CurrentUser() userId: string) {
+    return { bookmarks: await this.abs.bookmarks(userId) };
   }
 
-  // Marcadores: por ahora no se guardan; un error claro es mejor que fingir que se guardaron.
+  @Get('bookmarks/:id')
+  async itemBookmarks(@CurrentUser() userId: string, @Param('id') id: string) {
+    return { bookmarks: await this.abs.bookmarks(userId, id) };
+  }
+
   @Post('item/:id/bookmark')
-  createBookmark() {
-    throw new NotFoundException('Los marcadores aún no están disponibles en BookReader');
+  @HttpCode(200)
+  createBookmark(@CurrentUser() userId: string, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.abs.createBookmark(userId, id, body ?? {});
   }
 
   @Patch('item/:id/bookmark')
-  updateBookmark() {
-    throw new NotFoundException('Los marcadores aún no están disponibles en BookReader');
+  @HttpCode(200)
+  updateBookmark(@CurrentUser() userId: string, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.abs.updateBookmark(userId, id, body ?? {});
   }
 
   @Delete('item/:id/bookmark/:time')
-  deleteBookmark() {
-    throw new NotFoundException('Los marcadores aún no están disponibles en BookReader');
+  @HttpCode(200)
+  async deleteBookmark(@CurrentUser() userId: string, @Param('id') id: string, @Param('time') time: string) {
+    await this.abs.deleteBookmark(userId, id, time);
+    return {};
   }
 }

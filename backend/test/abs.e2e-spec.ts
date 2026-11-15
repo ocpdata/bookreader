@@ -133,11 +133,13 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
     storage.objects.clear();
     storage.deleted = [];
     await prisma.summary.deleteMany();
+    await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
   });
 
   afterAll(async () => {
     await prisma.summary.deleteMany();
+    await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
     await prisma.user.deleteMany({ where: { email: { in: emails } } });
     await prisma.$disconnect();
@@ -626,15 +628,170 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
       await api().post('/api/session/local-all').set(bearer(token)).send({ sessions: tooMany }).expect(400);
     });
 
-    it('responde vacíos el historial, las estadísticas y los marcadores; los marcadores no se pueden crear', async () => {
+    it('responde vacíos el historial y las estadísticas', async () => {
       const user = await createUser();
       const token = await tokenFor(user.email);
       const item = await addItem(user.id);
       expect((await api().get('/api/me/listening-sessions?page=0&itemsPerPage=10').set(bearer(token))).body).toMatchObject({ total: 0, sessions: [], numPages: 0 });
       expect((await api().get(`/api/me/item/listening-sessions/${item.id}`).set(bearer(token))).body.sessions).toEqual([]);
       expect((await api().get('/api/me/listening-stats').set(bearer(token))).body).toMatchObject({ totalTime: 0 });
-      expect((await api().get('/api/me/bookmarks').set(bearer(token))).body).toEqual({ bookmarks: [] });
-      await api().post(`/api/me/item/${item.id}/bookmark`).set(bearer(token)).send({ time: 1, title: 'x' }).expect(404);
+    });
+  });
+
+  describe('marcadores', () => {
+    const isBookmark = (b: any) => expect([typeof b.libraryItemId, typeof b.title, typeof b.time, isInt(b.createdAt)]).toEqual(['string', 'string', 'number', true]);
+
+    it('crea, lista, edita y borra marcadores por su posición', async () => {
+      const user = await createUser();
+      const token = await tokenFor(user.email);
+      const item = await addItem(user.id);
+      const create = (body: object) => api().post(`/api/me/item/${item.id}/bookmark`).set(bearer(token)).send(body);
+
+      const created = await create({ time: 120.5, title: '  Capítulo 2  ' });
+      expect(created.status).toBe(200);
+      isBookmark(created.body);
+      expect(created.body).toMatchObject({ libraryItemId: item.id, time: 120.5, title: 'Capítulo 2' });
+      await create({ time: 30, title: 'Inicio' }).expect(200);
+      expect((await create({ time: 30, title: 'Otra vez' })).status).toBe(400);
+      expect((await create({ time: 45 })).body.title).toBe('Marcador');
+      for (const bad of [{ title: 'x' }, { time: -1, title: 'x' }, { time: 'a', title: 'x' }, { time: 9e9, title: 'x' }, { time: 1, title: 'x'.repeat(256) }]) {
+        expect({ bad, status: (await create(bad)).status }).toEqual({ bad, status: 400 });
+      }
+
+      const all = (await api().get('/api/me/bookmarks').set(bearer(token))).body.bookmarks;
+      expect(all.map((b: any) => [b.time, b.title])).toEqual([[30, 'Inicio'], [45, 'Marcador'], [120.5, 'Capítulo 2']]);
+      all.forEach(isBookmark);
+      expect((await api().get(`/api/me/bookmarks/${item.id}`).set(bearer(token))).body.bookmarks).toHaveLength(3);
+      // También viajan en el usuario (login, authorize y /api/me).
+      expect((await api().get('/api/me').set(bearer(token))).body.bookmarks).toHaveLength(3);
+      expect((await deviceLogin(user.email)).body.user.bookmarks).toHaveLength(3);
+
+      const renamed = await api().patch(`/api/me/item/${item.id}/bookmark`).set(bearer(token)).send({ time: 120.5, title: 'Capítulo dos' });
+      expect([renamed.status, renamed.body.title]).toEqual([200, 'Capítulo dos']);
+      await api().patch(`/api/me/item/${item.id}/bookmark`).set(bearer(token)).send({ time: 99, title: 'x' }).expect(404);
+
+      expect((await api().delete(`/api/me/item/${item.id}/bookmark/120.5`).set(bearer(token))).status).toBe(200);
+      await api().delete(`/api/me/item/${item.id}/bookmark/120.5`).set(bearer(token)).expect(404);
+      await api().delete(`/api/me/item/${item.id}/bookmark/abc`).set(bearer(token)).expect(400);
+      expect((await api().get('/api/me/bookmarks').set(bearer(token))).body.bookmarks.map((b: any) => b.time)).toEqual([30, 45]);
+    });
+
+    it('limita los marcadores por audio, no cruza usuarios y desaparece con el audio', async () => {
+      const a = await createUser();
+      const b = await createUser();
+      const tokenA = await tokenFor(a.email);
+      const tokenB = await tokenFor(b.email);
+      const item = await addItem(a.id);
+      await prisma.bookmark.createMany({ data: Array.from({ length: 200 }, (_, i) => ({ userId: a.id, summaryId: item.id, timeSeconds: i, title: `m${i}` })) });
+      expect((await api().post(`/api/me/item/${item.id}/bookmark`).set(bearer(tokenA)).send({ time: 500, title: 'x' })).status).toBe(400);
+
+      expect((await api().post(`/api/me/item/${item.id}/bookmark`).set(bearer(tokenB)).send({ time: 1, title: 'x' })).status).toBe(404);
+      expect((await api().get('/api/me/bookmarks').set(bearer(tokenB))).body.bookmarks).toEqual([]);
+
+      // En la papelera no aparecen; al borrarlo definitivamente se eliminan con él.
+      await prisma.summary.update({ where: { id: item.id }, data: { deletedAt: new Date() } });
+      expect((await api().get('/api/me/bookmarks').set(bearer(tokenA))).body.bookmarks).toEqual([]);
+      await prisma.summary.delete({ where: { id: item.id } });
+      expect(await prisma.bookmark.count({ where: { userId: a.id } })).toBe(0);
+    });
+  });
+
+  describe('colecciones (carpetas)', () => {
+    const isCollection = (c: any) => {
+      expect([typeof c.id, typeof c.name, typeof c.libraryId, isInt(c.lastUpdate), isInt(c.createdAt)]).toEqual(['string', 'string', 'string', true, true]);
+      c.books.forEach((b: any) => expectBook(b));
+    };
+
+    it('ofrece las carpetas con audios como colecciones de solo lectura', async () => {
+      const user = await createUser();
+      const other = await createUser();
+      const token = await tokenFor(user.email);
+      const negocios = await prisma.folder.create({ data: { userId: user.id, name: 'Negocios' } });
+      const ventas = await prisma.folder.create({ data: { userId: user.id, name: 'Ventas', parentId: negocios.id } });
+      await prisma.folder.create({ data: { userId: user.id, name: 'Vacía' } });
+      await prisma.folder.create({ data: { userId: other.id, name: 'Ajena' } });
+      await addItem(user.id, { title: 'En negocios', folderId: negocios.id });
+      await addItem(user.id, { title: 'En ventas', folderId: ventas.id });
+      await addItem(user.id, { title: 'En papelera', folderId: ventas.id, deletedAt: new Date() });
+      await addItem(user.id, { title: 'Sin carpeta' });
+
+      const page = (await api().get('/api/libraries/lib_resumenes/collections').set(bearer(token))).body;
+      expect([page.total, page.page]).toEqual([2, 0]);
+      page.results.forEach(isCollection);
+      expect(page.results.map((c: any) => [c.name, c.books.map((b: any) => b.media.metadata.title)])).toEqual([
+        ['Negocios', ['En negocios']],
+        ['Negocios › Ventas', ['En ventas']],
+      ]);
+      expect((await api().get('/api/collections').set(bearer(token))).body.collections).toHaveLength(2);
+      const one = (await api().get(`/api/collections/${ventas.id}`).set(bearer(token))).body;
+      isCollection(one);
+      expect(one.name).toBe('Negocios › Ventas');
+      await api().get('/api/collections/inexistente').set(bearer(token)).expect(404);
+      const otherToken = await tokenFor(other.email);
+      await api().get(`/api/collections/${ventas.id}`).set(bearer(otherToken)).expect(404);
+    });
+  });
+
+  describe('descargas sin conexión', () => {
+    const binary = (req: request.Test) => req.buffer(true).parse((res, cb) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => cb(null, Buffer.concat(chunks)));
+    });
+
+    it('las pistas del detalle traen el ino con el que las apps piden el archivo', async () => {
+      const user = await createUser();
+      const token = await tokenFor(user.email);
+      const item = await addItem(user.id);
+      const full = (await api().get(`/api/items/${item.id}?expanded=1`).set(bearer(token))).body;
+      const track = full.media.tracks[0];
+      expect(track.ino).toMatch(/^\d+$/);
+      expect(track.ino).toBe(full.media.audioFiles[0].ino);
+      expect(track.contentUrl).toBe(`/api/items/${item.id}/file/${track.ino}`);
+      expect(track.metadata.size).toBe(SAMPLE.length);
+    });
+
+    it('descarga el archivo con Bearer o ?token=, con Range y como adjunto en /download', async () => {
+      const user = await createUser();
+      const token = await tokenFor(user.email);
+      const item = await addItem(user.id, { originalFilename: 'Hábitos atómicos.mp3' });
+      const ino = (await api().get(`/api/items/${item.id}?expanded=1`).set(bearer(token))).body.media.tracks[0].ino;
+      const url = `/api/items/${item.id}/file/${ino}`;
+
+      const viaBearer = await binary(api().get(url).set(bearer(token)));
+      expect([viaBearer.status, viaBearer.headers['content-type'], Buffer.compare(viaBearer.body, SAMPLE)]).toEqual([200, 'audio/mpeg', 0]);
+      expect(viaBearer.headers['content-disposition']).toBeUndefined();
+
+      const viaQuery = await binary(api().get(`${url}?token=${token}`));
+      expect([viaQuery.status, Buffer.compare(viaQuery.body, SAMPLE)]).toEqual([200, 0]);
+
+      const part = await binary(api().get(`${url}?token=${token}`).set('Range', 'bytes=0-99'));
+      expect([part.status, part.headers['content-range'], part.body.length]).toEqual([206, `bytes 0-99/${SAMPLE.length}`, 100]);
+
+      const download = await api().get(`${url}/download`).set(bearer(token));
+      expect(download.status).toBe(200);
+      expect(download.headers['content-disposition']).toBe("attachment; filename*=UTF-8''H%C3%A1bitos%20at%C3%B3micos.mp3");
+      expect((await api().get(`${url}/download?token=${token}`)).status).toBe(200);
+      expect((await api().head(`${url}?token=${token}`)).headers['content-length']).toBe(String(SAMPLE.length));
+    });
+
+    it('exige autenticación, el ino correcto y un audio propio y disponible', async () => {
+      const a = await createUser();
+      const b = await createUser();
+      const tokenA = await tokenFor(a.email);
+      const tokenB = await tokenFor(b.email);
+      const item = await addItem(a.id);
+      const ino = (await api().get(`/api/items/${item.id}?expanded=1`).set(bearer(tokenA))).body.media.tracks[0].ino;
+      const url = `/api/items/${item.id}/file/${ino}`;
+
+      await api().get(url).expect(401);
+      await api().get(`${url}?token=brt_falso`).expect(401);
+      await api().get(`/api/items/${item.id}/file/999`).set(bearer(tokenA)).expect(404);
+      await api().get(url).set(bearer(tokenB)).expect(404);
+      await api().get(`${url}?token=${tokenB}`).expect(404);
+      expect((await api().get(url).set(bearer(tokenA)).set('Range', `bytes=${SAMPLE.length + 5}-`)).status).toBe(416);
+      await prisma.summary.update({ where: { id: item.id }, data: { deletedAt: new Date() } });
+      await api().get(url).set(bearer(tokenA)).expect(404);
     });
   });
 

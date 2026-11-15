@@ -104,6 +104,8 @@ export function trackOf(row: ItemRow, contentUrl = `/api/items/${row.id}/file/${
     startOffset: 0,
     duration: durationOf(row),
     title: row.originalFilename,
+    // Las apps descargan cada pista por su ino (/api/items/:id/file/:ino).
+    ino: inoOf(row.id),
     contentUrl,
     mimeType: row.contentType,
     codec: file.codec,
@@ -170,6 +172,10 @@ export function progressOf(row: { id: string; durationSeconds: number | null }, 
   };
 }
 
+export function bookmarkOf(b: { summaryId: string; timeSeconds: number; title: string; createdAt: Date }) {
+  return { libraryItemId: b.summaryId, title: b.title, time: b.timeSeconds, createdAt: ms(b.createdAt) };
+}
+
 export function libraryOf(now = new Date()) {
   return {
     id: LIBRARY_ID,
@@ -204,6 +210,7 @@ export function userOf(
   user: { id: string; name: string; email: string | null; createdAt: Date; lastLoginAt: Date | null },
   mediaProgress: unknown[],
   token?: string,
+  bookmarks: unknown[] = [],
 ) {
   return {
     id: user.id,
@@ -212,7 +219,7 @@ export function userOf(
     token,
     mediaProgress,
     seriesHideFromContinueListening: [],
-    bookmarks: [],
+    bookmarks,
     isActive: true,
     isLocked: false,
     lastSeen: ms(user.lastLoginAt ?? new Date()),

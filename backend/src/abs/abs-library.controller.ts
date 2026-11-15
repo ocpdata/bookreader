@@ -79,10 +79,12 @@ export class AbsLibraryController {
     return emptyPage(query);
   }
 
+  /** Las carpetas con audios se ofrecen como colecciones (solo lectura: se administran en la web). */
   @Get('libraries/:id/collections')
-  collections(@Param('id') id: string, @Query() query: Record<string, unknown>) {
+  async collections(@CurrentUser() userId: string, @Param('id') id: string, @Query() query: Record<string, unknown>) {
     this.abs.libraryFor(id);
-    return emptyPage(query);
+    const results = await this.abs.collections(userId);
+    return { ...emptyPage(query), results, total: results.length };
   }
 
   @Get('libraries/:id/playlists')
@@ -98,8 +100,13 @@ export class AbsLibraryController {
   }
 
   @Get('collections')
-  allCollections() {
-    return { collections: [] };
+  async allCollections(@CurrentUser() userId: string) {
+    return { collections: await this.abs.collections(userId) };
+  }
+
+  @Get('collections/:id')
+  collection(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.abs.collection(userId, id);
   }
 
   @Get('playlists')

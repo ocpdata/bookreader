@@ -31,6 +31,7 @@ model User {
   folders      Folder[]
   apiTokens    ApiToken[]
   playSessions PlaySession[]
+  bookmarks    Bookmark[]
 
   @@map("users")
 }
@@ -53,6 +54,7 @@ model Summary {
   tags             SummaryTag[]
   favorites        Favorite[]
   playSessions     PlaySession[]
+  bookmarks        Bookmark[]
   title            String             @db.VarChar(200)
   author           String             @db.VarChar(200)
   summaryTitle     String?            @map("summary_title") @db.VarChar(200)
@@ -206,4 +208,21 @@ model PlaySession {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@map("play_sessions")
+}
+
+// Marcador de un usuario en un audio (apps compatibles con Audiobookshelf). El tiempo en segundos, con milisegundos,
+// identifica el marcador: las apps lo editan y borran por su posición.
+model Bookmark {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  userId      String   @map("user_id") @db.VarChar(36)
+  summaryId   String   @map("summary_id") @db.VarChar(36)
+  timeSeconds Float    @map("time_seconds")
+  title       String   @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary     Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, summaryId, timeSeconds])
+  @@index([summaryId])
+  @@map("bookmarks")
 }

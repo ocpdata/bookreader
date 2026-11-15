@@ -20,8 +20,8 @@ export function readBearerToken(headers: Record<string, unknown>): string | unde
   return match?.[1];
 }
 
-// Las apps piden las portadas con ?token= porque cargan imágenes sin poder añadir cabeceras.
-const QUERY_TOKEN_PATH = /^\/api\/items\/[^/]+\/cover$/;
+// Las apps piden portadas y descargas con ?token= porque cargan imágenes y archivos sin poder añadir cabeceras.
+const QUERY_TOKEN_PATH = /^\/api\/items\/[^/]+\/(cover|file\/[^/]+(\/download)?)$/;
 
 @Injectable()
 export class SessionUserResolver implements UserResolver {
@@ -37,7 +37,7 @@ export class SessionUserResolver implements UserResolver {
       if (session) return session.userId;
     }
     let deviceToken = readBearerToken(request.headers);
-    if (!deviceToken && request.method === 'GET' && request.path && QUERY_TOKEN_PATH.test(request.path)) {
+    if (!deviceToken && (request.method === 'GET' || request.method === 'HEAD') && request.path && QUERY_TOKEN_PATH.test(request.path)) {
       const queryToken = request.query?.token;
       if (typeof queryToken === 'string') deviceToken = queryToken;
     }

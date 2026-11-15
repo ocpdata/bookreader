@@ -83,6 +83,15 @@ server {
         ${proxy_common}
     }
 
+    # Descargas de audio para escuchar sin conexión: se transmiten sin búfer en disco y con lecturas largas.
+    location ~ ^/api/items/[^/]+/file/ {
+        ${proxy_common}
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
     location = /api/auth/login {
         limit_req zone=bookreader_login burst=5 nodelay;
         ${proxy_common}

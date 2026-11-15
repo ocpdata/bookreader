@@ -7,6 +7,7 @@ import {
   ItemRow,
   authorIdOf,
   authorizePayload,
+  bookmarkOf,
   itemInclude,
   itemOf,
   libraryOf,
@@ -21,6 +22,8 @@ import { PlaySessionService } from './play-session.service';
 const COMPLETE_RATIO = 0.95;
 const MAX_POSITION_SECONDS = 7 * 24 * 3600;
 const MAX_LOCAL_SESSIONS = 200;
+const MAX_BOOKMARK_TITLE = 255;
+const MAX_BOOKMARKS_PER_ITEM = 200;
 
 const str = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
 const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
@@ -66,7 +69,59 @@ export class AbsService {
 
   async userPayload(userId: string, token?: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    return userOf(user, await this.progressList(userId), token);
+    return userOf(user, await this.progressList(userId), token, await this.bookmarks(userId));
+  }
+
+  // ---- Marcadores -------------------------------------------------------------------------------------
+
+  /** Marcadores del usuario (de un audio o de todos) en el formato de las apps; no incluye audios en la papelera. */
+  async bookmarks(userId: string, itemId?: string) {
+    const rows = await this.prisma.bookmark.findMany({
+      where: { userId, ...(itemId ? { summaryId: itemId } : {}), summary: { status: SummaryStatus.READY, deletedAt: null } },
+      orderBy: [{ summaryId: 'asc' }, { timeSeconds: 'asc' }],
+    });
+    return rows.map(bookmarkOf);
+  }
+
+  private readBookmark(body: Record<string, unknown>) {
+    const time = num(body.time);
+    if (time === undefined || time < 0 || time > MAX_POSITION_SECONDS) throw new BadRequestException('Tiempo del marcador no válido');
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (title.length > MAX_BOOKMARK_TITLE) throw new BadRequestException('El título del marcador es demasiado largo');
+    // Milisegundos: la posición identifica el marcador y debe ser idéntica al editarlo o borrarlo.
+    return { time: Math.round(time * 1000) / 1000, title: title || 'Marcador' };
+  }
+
+  async createBookmark(userId: string, itemId: string, body: Record<string, unknown>) {
+    await this.item(userId, itemId);
+    const { time, title } = this.readBookmark(body);
+    if ((await this.prisma.bookmark.count({ where: { userId, summaryId: itemId } })) >= MAX_BOOKMARKS_PER_ITEM) {
+      throw new BadRequestException('Este audio ya tiene el máximo de marcadores');
+    }
+    try {
+      return bookmarkOf(await this.prisma.bookmark.create({ data: { userId, summaryId: itemId, timeSeconds: time, title } }));
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') throw new BadRequestException('Ya existe un marcador en ese momento');
+      throw error;
+    }
+  }
+
+  async updateBookmark(userId: string, itemId: string, body: Record<string, unknown>) {
+    await this.item(userId, itemId);
+    const { time, title } = this.readBookmark(body);
+    const where = { userId_summaryId_timeSeconds: { userId, summaryId: itemId, timeSeconds: time } };
+    if (!(await this.prisma.bookmark.findUnique({ where }))) throw new NotFoundException('Marcador no encontrado');
+    return bookmarkOf(await this.prisma.bookmark.update({ where, data: { title } }));
+  }
+
+  async deleteBookmark(userId: string, itemId: string, rawTime: string) {
+    await this.item(userId, itemId);
+    const time = Number(rawTime);
+    if (!Number.isFinite(time)) throw new BadRequestException('Tiempo del marcador no válido');
+    const { count } = await this.prisma.bookmark.deleteMany({
+      where: { userId, summaryId: itemId, timeSeconds: Math.round(time * 1000) / 1000 },
+    });
+    if (!count) throw new NotFoundException('Marcador no encontrado');
   }
 
   async authorize(userId: string, token?: string) {
@@ -203,6 +258,36 @@ export class AbsService {
       series: [],
       libraryItems: rows.map((r) => itemOf(r)),
     };
+  }
+
+  /** Las carpetas con audios, como colecciones de solo lectura (nombre = ruta completa; solo sus audios directos). */
+  async collections(userId: string) {
+    const [folders, rows] = await Promise.all([this.prisma.folder.findMany({ where: { userId } }), this.allItems(userId)]);
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const pathOf = (id: string): string => {
+      const folder = byId.get(id)!;
+      return folder.parentId && byId.has(folder.parentId) ? `${pathOf(folder.parentId)} › ${folder.name}` : folder.name;
+    };
+    const items = new Map<string, ItemRow[]>();
+    for (const row of rows) if (row.folderId) items.set(row.folderId, [...(items.get(row.folderId) ?? []), row]);
+    return folders
+      .filter((f) => items.has(f.id))
+      .map((f) => ({
+        id: f.id,
+        name: pathOf(f.id),
+        libraryId: LIBRARY_ID,
+        description: null,
+        books: items.get(f.id)!.map((r) => itemOf(r)),
+        lastUpdate: Math.max(f.updatedAt.getTime(), ...items.get(f.id)!.map((r) => r.updatedAt.getTime())),
+        createdAt: f.createdAt.getTime(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  }
+
+  async collection(userId: string, id: string) {
+    const found = (await this.collections(userId)).find((c) => c.id === id);
+    if (!found) throw new NotFoundException('Colección no encontrada');
+    return found;
   }
 
   async narrators(userId: string) {
