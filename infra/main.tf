@@ -114,7 +114,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "web" {
   name        = "${local.name}-web"
-  description = "SSH desde IPs permitidas; HTTP y HTTPS a la VM de BookReader"
+  description = "SSH, HTTP y HTTPS a la VM de BookReader desde IPs permitidas"
   vpc_id      = aws_vpc.main.id
 
   tags = { Name = "${local.name}-web" }
