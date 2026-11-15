@@ -167,7 +167,14 @@ Los dos workflows son `workflow_dispatch`: ninguno se ejecuta solo con un `push`
 
 Durante el despliegue, el workflow abre el puerto 22 solo a la IP del runner y lo cierra siempre al terminar, ya que el Security Group solo permite tu IP.
 
-**Variables** (Settings → Secrets and variables → Actions → Variables): `AWS_REGION`, `TFC_ORG`, `TFC_WORKSPACE`, `INSTANCE_TYPE`, `ALLOWED_CIDR_BLOCKS` (JSON, ej. `["1.2.3.4/32"]`), `VPC_CIDR`, `PUBLIC_SUBNET_CIDR`, `PRIVATE_SUBNET_1_CIDR`, `PRIVATE_SUBNET_2_CIDR`, `DB_INSTANCE_CLASS`, `DB_ENGINE_VERSION`, `DB_ALLOCATED_STORAGE`, `DB_NAME`. `APP_DOMAIN` y `LETSENCRYPT_EMAIL` (workflow `https`). Opcionales: `S3_BUCKET` (por defecto `resumen-book-reader`) y `APP_ORIGIN` (dominio con HTTPS, se añade al CORS del bucket).
+**Protección y monitoreo** (`infra/monitoring.tf`):
+- **S3**: el bucket tiene versionado y las versiones anteriores o borradas se eliminan a los 14 días (`noncurrent_version_days`). Un borrado por error se recupera con `aws s3api list-object-versions` y `get-object --version-id` (o quitando el marcador de borrado). Un borrado definitivo desde la app deja por tanto una copia recuperable durante esos 14 días.
+- **Alarmas** (SNS por correo; la suscripción se confirma una vez desde el enlace del correo): la VM falla los chequeos de AWS, a la base le quedan menos de 4 GiB y la web deja de responder (chequeo HTTPS externo de Route 53 a `/api/health`, que también consulta la base).
+- **Presupuesto**: aviso al 80 % real y al 100 % previsto del gasto mensual **de toda la cuenta AWS** (`MONTHLY_BUDGET_USD`, 25 por defecto).
+- Solo se crean si existe la variable `ALERT_EMAIL`.
+- **Copias de la base**: RDS conserva 7 días de copias automáticas. La restauración se probó (punto en el tiempo a una instancia temporal en la misma VPC, comparación de datos y borrado): `aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier bookreader-mysql --target-db-instance-identifier <temporal> --use-latest-restorable-time --db-instance-class db.t4g.micro --db-subnet-group-name bookreader-db --vpc-security-group-ids <sg de la base> --no-publicly-accessible --no-deletion-protection`; desde la VM se compara con producción y la instancia temporal se borra.
+
+**Variables** (Settings → Secrets and variables → Actions → Variables): `AWS_REGION`, `TFC_ORG`, `TFC_WORKSPACE`, `INSTANCE_TYPE`, `ALLOWED_CIDR_BLOCKS` (JSON, ej. `["1.2.3.4/32"]`), `VPC_CIDR`, `PUBLIC_SUBNET_CIDR`, `PRIVATE_SUBNET_1_CIDR`, `PRIVATE_SUBNET_2_CIDR`, `DB_INSTANCE_CLASS`, `DB_ENGINE_VERSION`, `DB_ALLOCATED_STORAGE`, `DB_NAME`. `APP_DOMAIN` y `LETSENCRYPT_EMAIL` (workflow `https`). Opcionales: `ALERT_EMAIL` y `MONTHLY_BUDGET_USD` (alarmas y presupuesto), `S3_BUCKET` (por defecto `resumen-book-reader`) y `APP_ORIGIN` (dominio con HTTPS, se añade al CORS del bucket).
 
 **Secrets:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TFC_TOKEN`, `SSH_KEY_PEM`, `DB_USER`, `DB_PASSWORD`.
 
