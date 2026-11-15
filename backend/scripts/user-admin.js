@@ -14,6 +14,10 @@
  *   node scripts/user-admin.js invite [--email x] [--uses n] [--days n] [--note "..."]
  *                                                              Crea un código de invitación (se muestra una sola vez)
  *   node scripts/user-admin.js invitations                     Lista las invitaciones (sin los códigos)
+ *   node scripts/user-admin.js audios <correo>                 Lista los audios de una cuenta (con su id)
+ *   node scripts/user-admin.js remove-audio <id> [--reason "..."]
+ *                                                              Retiro de contenido: elimina un audio al instante
+ *   node scripts/user-admin.js delete-user <correo> --confirm  Elimina una cuenta y todos sus datos
  *
  * La contraseña se pide por teclado (sin mostrarla); no se admite como argumento para que no quede en
  * el historial. Para automatizar, USER_ADMIN_PASSWORD la toma del entorno.
@@ -34,6 +38,26 @@ const fail = (message) => {
   console.error(`Error: ${message}`);
   process.exitCode = 1;
 };
+
+/**
+ * Borrado definitivo con la misma lógica y las mismas salvaguardas que la aplicación (usa el código compilado:
+ * hay que haber ejecutado `npm run build`; en la VM ya viene en el release). ADMIN_SKIP_S3=true solo existe
+ * para las pruebas: no toca S3.
+ */
+function eraser() {
+  const { AccountEraser } = require('../dist/accounts/account-eraser');
+  let storage = { deleteObjects: async () => [] };
+  if (process.env.ADMIN_SKIP_S3 !== 'true') {
+    const { StorageService } = require('../dist/storage/storage.service');
+    storage = new StorageService({
+      getOrThrow: (key) => {
+        if (!process.env[key]) throw new Error(`Falta ${key} en el entorno`);
+        return process.env[key];
+      },
+    });
+  }
+  return new AccountEraser(prisma, storage);
+}
 
 function askHidden(question) {
   return new Promise((resolve) => {
@@ -160,6 +184,36 @@ const commands = {
     console.log(`Cuota de ${email}: almacenamiento ${gb}, audios ${updated.maxAudios ?? 'por defecto'}.`);
   },
 
+  async audios(emailArg) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    const rows = await prisma.summary.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'asc' } });
+    for (const s of rows) {
+      console.log(`${s.id}  ${s.status}${s.deletedAt ? '+PAPELERA' : ''}  ${(s.sizeBytes / 1024 ** 2).toFixed(1)} MB  ${s.title} — ${s.author}`);
+    }
+    console.log(`${rows.length} audios de ${email}.`);
+  },
+
+  /** Retiro de contenido: elimina un audio al instante (archivo, portada y fila), sin pasar por la papelera. */
+  async 'remove-audio'(id, ...args) {
+    if (!id) throw new Error('Uso: remove-audio <id> [--reason "..."]');
+    const reason = args[0] === '--reason' ? args[1] : undefined;
+    const removed = await eraser().deleteAudio(id);
+    console.log(`Audio eliminado: "${removed.title}" (usuario ${removed.email ?? removed.userId}).${reason ? ` Motivo: ${reason}.` : ''}`);
+    console.log('Avisa a la persona por correo: la aplicación no lo envía desde este comando.');
+  },
+
+  /** Elimina una cuenta y todos sus datos (solicitud de cancelación o resolución de una reclamación). */
+  async 'delete-user'(emailArg, confirm) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    if (confirm !== '--confirm') throw new Error(`Esto borra la cuenta y todo su contenido. Repite con --confirm: delete-user ${email} --confirm`);
+    const { audios } = await eraser().deleteAccount(user.id);
+    console.log(`Cuenta eliminada: ${email} (${audios} audios).`);
+  },
+
   async invite(...args) {
     const options = { uses: '1', days: '14' };
     for (let i = 0; i < args.length; i += 2) {
@@ -200,7 +254,7 @@ const commands = {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!commands[command]) {
-    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|set-quota|invite|invitations> ...');
+    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|set-quota|invite|invitations|audios|remove-audio|delete-user> ...');
     process.exitCode = 2;
     return;
   }

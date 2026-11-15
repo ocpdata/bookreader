@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Pars
 import type { Request, Response } from 'express';
 import { ApiTokenService } from './api-token.service';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, LoginDto } from './auth.dto';
+import { ChangePasswordDto, DeleteAccountDto, LoginDto } from './auth.dto';
 import { CurrentUser } from './current-user.decorator';
 import { Public } from './public.decorator';
 import { SessionService, SESSION_DAYS } from './session.service';
@@ -73,5 +73,25 @@ export class AuthController {
     const token = readSessionToken(req.headers);
     if (!token) throw new UnauthorizedException();
     await this.auth.changePassword(userId, token, dto.current, dto.next);
+  }
+
+  /** Aceptar la versión vigente de los términos y del aviso de privacidad (la web lo pide si cambió). */
+  @Post('accept-terms')
+  @HttpCode(200)
+  acceptTerms(@CurrentUser() userId: string) {
+    return this.auth.acceptTerms(userId);
+  }
+
+  /** Elimina la cuenta y todo su contenido, confirmando con la contraseña. Solo con la sesión web. */
+  @Delete('account')
+  @HttpCode(204)
+  async deleteAccount(
+    @CurrentUser() userId: string,
+    @Body() dto: DeleteAccountDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.auth.deleteAccount(userId, dto.password, req.ip ?? 'desconocida');
+    res.clearCookie(SESSION_COOKIE, cookieOptions());
   }
 }

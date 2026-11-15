@@ -24,3 +24,10 @@ export class ChangePasswordDto {
   @MaxLength(200)
   next!: string;
 }
+
+export class DeleteAccountDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  password!: string;
+}

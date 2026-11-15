@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { User, UserStatus } from '@prisma/client';
 import { MailService } from '../mail/mail.service';
-import { accountExistsMessage, passwordChangedMessage, resetPasswordMessage, verifyEmailMessage } from '../mail/templates';
+import { accountDeletedMessage, accountExistsMessage, passwordChangedMessage, resetPasswordMessage, verifyEmailMessage } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiTokenService } from './api-token.service';
 import { EmailTokenService } from './email-token.service';
@@ -183,6 +183,11 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     await this.sessions.destroyAll(user.id);
     await this.apiTokens.revokeAll(user.id);
     if (user.email) await this.safeSend(passwordChangedMessage(user.name, appUrl('/olvide')), user.email);
+  }
+
+  /** Confirma por correo que la cuenta se eliminó (se envía después del borrado, con los datos que se guardaron antes). */
+  async notifyAccountDeleted(user: Pick<User, 'name' | 'email'>) {
+    if (user.email) await this.safeSend(accountDeletedMessage(user.name), user.email);
   }
 
   /** Avisa por correo de que la contraseña cambió (la usa también el cambio de contraseña desde la cuenta). */

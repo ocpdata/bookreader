@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AbsCompatModule } from './abs/abs.module';
+import { AccountsModule } from './accounts/accounts.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { QuotaModule } from './quota/quota.module';
@@ -19,6 +20,7 @@ import { HealthController } from './health/health.controller';
     PrismaModule,
     MailModule,
     QuotaModule,
+    AccountsModule,
     StorageModule,
     TagsModule,
     FoldersModule,

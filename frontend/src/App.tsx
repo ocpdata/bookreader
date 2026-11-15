@@ -20,6 +20,7 @@ import RegisterView from './components/RegisterView'
 import ResetPasswordView from './components/ResetPasswordView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
+import TermsGate from './components/TermsGate'
 import TrashView from './components/TrashView'
 import VerifyEmailView from './components/VerifyEmailView'
 import type { Category } from './types'
@@ -90,6 +91,7 @@ export default function App() {
         </Toolbar>
       </AppBar>
       <Container maxWidth="md" sx={{ py: 3 }}>
+        <TermsGate />
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}

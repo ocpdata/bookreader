@@ -93,7 +93,7 @@ describe('Autenticación (e2e)', () => {
   it('inicia sesión con cookie httpOnly y sin exponer la contraseña ni el token en la base', async () => {
     const user = await createUser('Dueña@Auth.test');
     const { cookie, raw, body } = await login('  dueña@auth.TEST  '); // el correo se normaliza
-    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test' });
+    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test', needsTerms: true });
     expect(JSON.stringify(body)).not.toMatch(/hash|password/i);
     expect(raw).toMatch(/^br_session=[A-Za-z0-9_-]{43}/);
     expect(raw).toMatch(/HttpOnly/i);
@@ -263,7 +263,7 @@ describe('Autenticación (e2e)', () => {
   });
 
   describe('script de administración', () => {
-    const run = (args: string[], password?: string) =>
+    const run = (args: string[], password?: string, extraEnv: Record<string, string> = {}) =>
       spawnSync('node', ['scripts/user-admin.js', ...args], {
         cwd: `${__dirname}/..`,
         encoding: 'utf8',
@@ -272,6 +272,7 @@ describe('Autenticación (e2e)', () => {
           DATABASE_URL: TEST_DATABASE_URL,
           BCRYPT_COST: '4',
           ...(password ? { USER_ADMIN_PASSWORD: password } : {}),
+          ...extraEnv,
         },
       });
 
@@ -302,6 +303,41 @@ describe('Autenticación (e2e)', () => {
       await api().post('/api/auth/login').send({ email: 'nuevo@auth.test', password: PASSWORD }).expect(401);
       await login('nuevo@auth.test', 'contraseña-nueva-9876');
       expect(run(['set-password', 'inexistente@auth.test'], PASSWORD).status).toBe(1);
+    });
+
+    it('retiro de contenido: lista y elimina audios y cuentas con las mismas salvaguardas (sin tocar S3 en las pruebas)', async () => {
+      const skipS3 = { ADMIN_SKIP_S3: 'true' };
+      expect(run(['create', 'retiro@auth.test', 'Retiro'], PASSWORD).status).toBe(0);
+      const user = await prisma.user.findUniqueOrThrow({ where: { email: 'retiro@auth.test' } });
+      const mk = (title: string) =>
+        prisma.summary.create({
+          data: { userId: user.id, title, author: 'A', categoryId, s3Key: `audios/${user.id}/${crypto.randomUUID()}/audio.mp3`, originalFilename: 'a.mp3', sizeBytes: 1048576, contentType: 'audio/mpeg', status: 'READY' },
+        });
+      const first = await mk('Primero');
+      await mk('Segundo');
+      const folder = await prisma.folder.create({ data: { userId: user.id, name: 'Padre' } });
+      await prisma.folder.create({ data: { userId: user.id, name: 'Hijo', parentId: folder.id } });
+
+      const list = run(['audios', 'retiro@auth.test']);
+      expect(list.status).toBe(0);
+      expect(list.stdout).toContain(first.id);
+      expect(list.stdout).toContain('2 audios');
+
+      const removed = run(['remove-audio', first.id, '--reason', 'reclamación 123'], undefined, skipS3);
+      expect(removed.status).toBe(0);
+      expect(removed.stdout).toContain('Primero');
+      expect(removed.stdout).toContain('reclamación 123');
+      expect(await prisma.summary.count({ where: { userId: user.id } })).toBe(1);
+      expect(run(['remove-audio', first.id], undefined, skipS3).status).toBe(1); // ya no existe
+      expect(run(['remove-audio'], undefined, skipS3).status).toBe(1);
+
+      // Sin --confirm no borra nada; con él elimina la cuenta, sus carpetas anidadas y lo que quedaba.
+      expect(run(['delete-user', 'retiro@auth.test'], undefined, skipS3).status).toBe(1);
+      expect(await prisma.user.count({ where: { id: user.id } })).toBe(1);
+      expect(run(['delete-user', 'retiro@auth.test', '--confirm'], undefined, skipS3).status).toBe(0);
+      expect(await prisma.user.count({ where: { id: user.id } })).toBe(0);
+      expect(await prisma.folder.count({ where: { userId: user.id } })).toBe(0);
+      expect(run(['delete-user', 'inexistente@auth.test', '--confirm'], undefined, skipS3).status).toBe(1);
     });
 
     it('fija la cuota propia de una cuenta y permite volver a los valores por defecto', async () => {

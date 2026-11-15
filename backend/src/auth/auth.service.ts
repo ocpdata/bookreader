@@ -6,7 +6,9 @@ import { LoginRateLimiter } from './login-rate-limiter';
 import { ApiTokenService } from './api-token.service';
 import { PasswordService } from './password.service';
 import { RegistrationService } from './registration.service';
+import { TERMS_VERSION } from './registration.config';
 import { SessionService } from './session.service';
+import { AccountEraser, OWNER_ID } from '../accounts/account-eraser';
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -21,6 +23,7 @@ export class AuthService {
     private readonly limiter: LoginRateLimiter,
     private readonly apiTokens: ApiTokenService,
     private readonly registration: RegistrationService,
+    private readonly eraser: AccountEraser,
   ) {}
 
   /** Comprueba correo y contraseña con límite de intentos y error genérico; no crea ninguna sesión. */
@@ -52,7 +55,12 @@ export class AuthService {
   async login(rawEmail: string, password: string, ip: string, userAgent?: string) {
     const user = await this.verifyCredentials(rawEmail, password, ip);
     const session = await this.sessions.create(user.id, userAgent);
-    return { session, user: { id: user.id, name: user.name, email: user.email } };
+    return { session, user: this.present(user) };
+  }
+
+  /** Lo que la web necesita saber de la persona; `needsTerms` es true si no aceptó la versión vigente de los términos. */
+  private present(user: { id: string; name: string; email: string | null; termsVersion: string | null }) {
+    return { id: user.id, name: user.name, email: user.email, needsTerms: user.termsVersion !== TERMS_VERSION };
   }
 
   /** Login de una app compatible: devuelve un token de dispositivo en vez de abrir una sesión web. */
@@ -62,8 +70,33 @@ export class AuthService {
   }
 
   async me(userId: string) {
+    return this.present(await this.prisma.user.findUniqueOrThrow({ where: { id: userId } }));
+  }
+
+  /** Registra la aceptación de la versión vigente de los términos y del aviso de privacidad. */
+  async acceptTerms(userId: string) {
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION } });
+    return this.present(user);
+  }
+
+  /**
+   * Elimina la cuenta y todos sus datos, tras confirmar la contraseña (con el mismo límite de intentos que el acceso).
+   * Un error de contraseña es un 400, no un 401: el cliente cerraría la sesión al verlo.
+   */
+  async deleteAccount(userId: string, password: string, ip: string) {
+    if (userId === OWNER_ID) throw new ForbiddenException('La cuenta propietaria no se puede eliminar desde la web');
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    return { id: user.id, name: user.name, email: user.email };
+    const key = user.email ?? user.id;
+    if (this.limiter.isBlocked(ip, key)) {
+      throw new HttpException('Demasiados intentos. Inténtalo de nuevo en unos minutos.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    if (!(await this.passwords.verify(password, user.passwordHash))) {
+      this.limiter.recordFailure(ip, key);
+      throw new BadRequestException('La contraseña no es correcta');
+    }
+    this.limiter.reset(ip, key);
+    await this.eraser.deleteAccount(userId);
+    await this.registration.notifyAccountDeleted(user);
   }
 
   /** Cambia la contraseña y cierra el resto de sesiones del usuario (la actual se conserva). */

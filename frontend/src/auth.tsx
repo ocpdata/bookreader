@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { getMe, login as apiLogin, logout as apiLogout, onUnauthorized, type CurrentUser } from './api'
+import { acceptTerms as apiAcceptTerms, getMe, login as apiLogin, logout as apiLogout, onUnauthorized, type CurrentUser } from './api'
 
 interface AuthState {
   /** undefined mientras se comprueba la sesión; null si no hay sesión. */
   user: CurrentUser | null | undefined
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /** Acepta la versión vigente de los términos y del aviso de privacidad. */
+  acceptTerms: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -37,7 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ user, login, logout }), [user, login, logout])
+  const accept = useCallback(async () => {
+    setUser(await apiAcceptTerms())
+  }, [])
+
+  const value = useMemo(() => ({ user, login, logout, acceptTerms: accept }), [user, login, logout, accept])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

@@ -66,7 +66,15 @@ export interface CurrentUser {
   id: string
   name: string
   email: string | null
+  /** true si todavía no aceptó la versión vigente de los términos y del aviso de privacidad. */
+  needsTerms: boolean
 }
+
+export const acceptTerms = () => request<CurrentUser>('/auth/accept-terms', { method: 'POST' })
+
+/** Elimina la cuenta y todo su contenido; la contraseña mala es un 400 (no cierra la sesión). */
+export const deleteAccount = (password: string) =>
+  request<void>('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) })
 
 export const login = (email: string, password: string) =>
   request<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })

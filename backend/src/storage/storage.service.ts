@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -135,5 +136,24 @@ export class StorageService {
   async deleteObject(key: string): Promise<void> {
     if (!DELETABLE_KEY.test(key)) throw new Error(`Clave no permitida para borrar: ${key}`);
     await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  /**
+   * Borra varios objetos en lotes de hasta 1000 (borrar una cuenta con cientos de audios es una sola ronda).
+   * Se aplica la misma lista de claves permitidas, y se rechaza todo el conjunto si alguna no la cumple.
+   * Devuelve las claves que S3 no pudo borrar.
+   */
+  async deleteObjects(keys: string[]): Promise<string[]> {
+    const invalid = keys.find((key) => !DELETABLE_KEY.test(key));
+    if (invalid) throw new Error(`Clave no permitida para borrar: ${invalid}`);
+    const failed: string[] = [];
+    for (let i = 0; i < keys.length; i += 1000) {
+      const batch = keys.slice(i, i + 1000);
+      const result = await this.s3.send(
+        new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true } }),
+      );
+      failed.push(...(result.Errors ?? []).map((e) => e.Key!).filter(Boolean));
+    }
+    return failed;
   }
 }

@@ -25,6 +25,25 @@ export class FakeStorage {
     };
     await real.deleteObject(key);
   };
+  /** Borrado por lotes: aplica la validación real de claves y devuelve las que "fallan" (failKeys o failAllDeletes). */
+  deleteObjects = async (keys: string[]) => {
+    const real = Object.create(StorageService.prototype) as StorageService;
+    (real as any).bucket = 'x';
+    (real as any).s3 = {
+      send: async (command: any) => {
+        const errors: { Key: string }[] = [];
+        for (const { Key } of command.input.Delete.Objects) {
+          if (this.failAllDeletes || this.failKeys.has(Key)) errors.push({ Key });
+          else {
+            this.deleted.push(Key);
+            this.objects.delete(Key);
+          }
+        }
+        return { Errors: errors };
+      },
+    };
+    return real.deleteObjects(keys);
+  };
   createUploadUrl = async (key: string) => `https://s3.test/upload/${key}`;
   createPlaybackUrl = async (key: string) => `https://s3.test/play/${key}`;
   getObjectSize = async (key: string) => this.objects.get(key)?.length ?? null;

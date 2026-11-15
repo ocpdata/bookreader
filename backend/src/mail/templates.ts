@@ -74,3 +74,18 @@ export function passwordChangedMessage(name: string, resetUrl: string) {
     html: layout(`Hola ${name}`, ['La contraseña de tu cuenta de BookReader acaba de cambiar y se cerraron tus otras sesiones y apps vinculadas.', 'Si no fuiste tú, restablécela de inmediato.'], { label: 'Restablecer mi contraseña', url: resetUrl }),
   };
 }
+
+export function accountDeletedMessage(name: string) {
+  return {
+    subject: 'Eliminamos tu cuenta de BookReader',
+    text: text([
+      `Hola ${name},`,
+      '',
+      'Tu cuenta de BookReader y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.',
+      'Las copias técnicas de los archivos pueden tardar hasta 14 días en desaparecer por completo.',
+      '',
+      'Si no fuiste tú, responde a este correo cuanto antes.',
+    ]),
+    html: layout(`Hola ${name}`, ['Tu cuenta de BookReader y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.', 'Las copias técnicas de los archivos pueden tardar hasta 14 días en desaparecer por completo.'], undefined, 'Si no fuiste tú, responde a este correo cuanto antes.'),
+  };
+}

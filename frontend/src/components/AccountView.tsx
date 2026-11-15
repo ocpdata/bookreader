@@ -1,16 +1,102 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
+import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, getUsage, listDevices, revokeAllDevices, revokeDevice, type LinkedDevice, type Usage } from '../api'
+import { changePassword, deleteAccount, getUsage, listDevices, revokeAllDevices, revokeDevice, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
 import { formatBytes } from '../format'
 
 const MIN_LENGTH = 12
+
+/** Zona de peligro: eliminar la cuenta y todo su contenido, confirmando con la contraseña. */
+function DeleteAccountSection() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  function close() {
+    if (busy) return
+    setOpen(false)
+    setPassword('')
+    setError('')
+  }
+
+  async function confirm(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await deleteAccount(password)
+      // La sesión ya no existe en el servidor: se limpia la local y se vuelve al acceso.
+      await logout()
+      navigate('/entrar', { replace: true })
+    } catch (err) {
+      setError((err as Error).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography variant="h6" component="h2" color="error">
+        Eliminar mi cuenta
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        Se borran tu cuenta y todo tu contenido: audios, portadas, carpetas, etiquetas, marcadores y progreso. No se puede deshacer.
+      </Typography>
+      <Button color="error" variant="outlined" onClick={() => setOpen(true)} sx={{ alignSelf: 'flex-start' }}>
+        Eliminar mi cuenta
+      </Button>
+      <Dialog open={open} onClose={close} aria-labelledby="delete-account-title" fullWidth maxWidth="xs">
+        <form onSubmit={confirm}>
+          <DialogTitle id="delete-account-title">¿Eliminar tu cuenta?</DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ mb: 2 }}>
+              Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones y apps vinculadas. Las copias técnicas de los
+              archivos pueden tardar hasta 14 días en desaparecer. Escribe tu contraseña para confirmar.
+            </DialogContentText>
+            <TextField
+              label="Contraseña"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              fullWidth
+              autoFocus
+            />
+            {error && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {error}
+              </Alert>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={close} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button type="submit" color="error" variant="contained" disabled={busy || !password}>
+              Eliminar definitivamente
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+    </Stack>
+  )
+}
 
 /** Espacio y audios usados frente a la cuota de la cuenta. */
 function UsageSection() {
@@ -189,6 +275,8 @@ export default function AccountView() {
       <UsageSection />
       <Divider />
       <DevicesSection />
+      <Divider />
+      <DeleteAccountSection />
     </Stack>
   )
 }
