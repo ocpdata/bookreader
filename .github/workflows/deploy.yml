@@ -121,7 +121,7 @@ jobs:
             echo "PORT=3000"
             # Correo transaccional (SES). El remitente debe coincidir con mail_from_local_part de infra (no-responder).
             echo "MAIL_DRIVER=ses"
-            echo "MAIL_FROM=BookReader <no-responder@${APP_DOMAIN}>"
+            echo "MAIL_FROM=\"BookReader <no-responder@${APP_DOMAIN}>\""
             echo "SES_CONFIGURATION_SET=bookreader-correo"
             echo "APP_PUBLIC_URL=https://${APP_DOMAIN}"
           } > "$RUNNER_TEMP/api.env"
