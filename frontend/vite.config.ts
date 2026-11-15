@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     port: 5500,
     strictPort: true, // el CORS del bucket S3 solo permite este origen
-    proxy: { '/api': 'http://127.0.0.1:3000' },
+    // changeOrigin: false conserva el Host original (localhost:5500): el backend compara el Origin de las
+    // peticiones que cambian datos con el Host, igual que detrás de Nginx en producción.
+    proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } },
   },
 })

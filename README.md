@@ -83,9 +83,26 @@ Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y la
 
 Las etiquetas son libres y de cada usuario (hasta 10 por audio, 50 caracteres). MySQL las compara sin distinguir mayúsculas ni acentos, así que "Ventas" y "ventas" son la misma etiqueta y se conserva la primera grafía. Al quitar la última referencia a una etiqueta, esta desaparece de las sugerencias. Los favoritos también son por usuario. La biblioteca filtra por etiqueta, favoritos, estado (terminados o pendientes), categoría y texto, y ordena por fecha, título, duración o última escucha; filtros y orden viven en la URL.
 
-## Usuarios
+## Usuarios y acceso
 
-Cada audio pertenece a un usuario y todas las consultas se filtran por él; un audio ajeno responde 404. Hasta que exista el login hay un único usuario fijo (`DEFAULT_USER_ID`, creado en la migración). Para implementar el login solo hay que reemplazar `SingleUserResolver` (`backend/src/auth/`), el único punto que decide quién es el usuario de la petición, y quitar el valor por defecto de `summaries.user_id`.
+Cada audio pertenece a un usuario y todas las consultas se filtran por él; un audio ajeno responde 404. Toda la API exige sesión salvo `/api/health`, `POST /api/auth/login` y `POST /api/auth/logout`.
+
+- **Sesiones en servidor**: el login (`POST /api/auth/login`, correo + contraseña) crea una fila en `sessions` y entrega la cookie `br_session` (`HttpOnly`, `SameSite=Lax`, `Secure` si `NODE_ENV=production` o `COOKIE_SECURE=true`). La BD guarda solo el hash SHA-256 del token. Caducan a los 30 días de inactividad (se renuevan como máximo una vez al día) y las vencidas se limpian cada hora. `GET /api/auth/me` devuelve el usuario; `POST /api/auth/password` cambia la contraseña y cierra las demás sesiones (contraseña actual errónea → 400).
+- **Contraseñas**: bcrypt (`BCRYPT_COST`, 12 por defecto), de 12 a 72 bytes. Mismo error genérico para correo desconocido y contraseña errónea. Límite de intentos en memoria: 5 fallos por IP + correo y 30 por IP cada 15 min (429).
+- **CSRF**: `OriginGuard` rechaza peticiones que cambian datos si `Origin` no coincide con el host (o con `ALLOWED_ORIGINS`, separados por comas) o si `Sec-Fetch-Site` es cross-site. El proxy debe conservar `Host` (Nginx y el proxy de Vite lo hacen).
+- **Registro cerrado**: los usuarios se crean solo con el script de administración, que pide la contraseña sin eco (o `USER_ADMIN_PASSWORD`); nunca la pases por chat ni la dejes en el historial.
+
+```bash
+cd backend
+npm run user -- set-owner correo@dominio.com "Nombre"   # asigna correo y contraseña al usuario inicial
+npm run user -- create correo@dominio.com "Nombre"
+npm run user -- set-password correo@dominio.com
+npm run user -- list
+```
+
+En la VM: `ssh -t … "cd /var/app/bookreader/current/backend && node --env-file=/var/app/bookreader/shared/api.env scripts/user-admin.js set-owner correo@dominio.com 'Nombre'"`.
+
+`UserResolver` (`backend/src/auth/`) es el único punto que decide quién es el usuario de la petición; `users.external_id` está reservado para el `sub` de Amazon Cognito, al que se migrará (con una Lambda de migración de usuarios) antes de abrir el registro. Pendiente: quitar el valor por defecto de `summaries.user_id`.
 
 ## Pruebas
 

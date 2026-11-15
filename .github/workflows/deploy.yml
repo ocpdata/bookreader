@@ -80,7 +80,7 @@ jobs:
       - name: Package release
         run: |
           mkdir -p release/backend release/frontend
-          cp -R backend/dist backend/prisma backend/node_modules backend/package.json backend/package-lock.json release/backend/
+          cp -R backend/dist backend/prisma backend/scripts backend/node_modules backend/package.json backend/package-lock.json release/backend/
           cp -R frontend/dist release/frontend/dist
           tar -czf bookreader-release.tgz -C release backend frontend
           ls -lh bookreader-release.tgz

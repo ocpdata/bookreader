@@ -6,3 +6,5 @@ process.env.AWS_REGION = 'us-east-1';
 process.env.S3_BUCKET = 'bucket-de-pruebas';
 // Los tests ejecutan la purga a mano (PurgeService.run); el temporizador no debe correr.
 process.env.PURGE_ENABLED = 'false';
+// bcrypt con coste mínimo: las pruebas crean y verifican muchas contraseñas.
+process.env.BCRYPT_COST = '4';

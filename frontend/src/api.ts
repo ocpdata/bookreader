@@ -21,6 +21,12 @@ export function audioContentType(filename: string): string | null {
   return AUDIO_TYPES[ext] ?? null
 }
 
+// Cuando el servidor responde 401 en cualquier llamada, la sesión terminó: se avisa para volver al acceso.
+let unauthorizedHandler: (() => void) | null = null
+export const onUnauthorized = (handler: (() => void) | null) => {
+  unauthorizedHandler = handler
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
@@ -31,6 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new Error('No se pudo conectar con el servidor. ¿Está corriendo el backend?')
   }
+  if (res.status === 401 && !path.startsWith('/auth/login')) unauthorizedHandler?.()
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     const message = Array.isArray(body?.message) ? body.message.join('. ') : body?.message
@@ -52,6 +59,22 @@ function track<T>(promise: Promise<T>): Promise<T> {
 }
 
 const settlePendingSaves = () => Promise.allSettled([...pendingSaves])
+
+export interface CurrentUser {
+  id: string
+  name: string
+  email: string | null
+}
+
+export const login = (email: string, password: string) =>
+  request<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+
+export const logout = () => request<void>('/auth/logout', { method: 'POST' })
+
+export const getMe = () => request<CurrentUser>('/auth/me')
+
+export const changePassword = (current: string, next: string) =>
+  request<void>('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
 
 export const listCategories = () => request<Category[]>('/categories')
 
