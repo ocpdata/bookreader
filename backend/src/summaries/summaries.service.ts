@@ -3,6 +3,7 @@ import { extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { QuotaService } from '../quota/quota.service';
 import { StorageService } from '../storage/storage.service';
 import { coverVersion, newCoverKey, normalizeCover } from '../covers/cover-image';
 import { FoldersService } from '../folders/folders.service';
@@ -75,6 +76,7 @@ export class SummariesService {
     private readonly storage: StorageService,
     private readonly tags: TagsService,
     private readonly folders: FoldersService,
+    private readonly quota: QuotaService,
     private readonly purge: PurgeService,
   ) {}
 
@@ -211,22 +213,25 @@ export class SummariesService {
 
     // Clave nueva por carga y prefijada por usuario: una URL prefirmada nunca sobrescribe un audio.
     const s3Key = `audios/${userId}/${randomUUID()}/audio${ext}`;
-    const summary = await this.prisma.summary.create({
-      data: {
-        userId,
-        title: dto.title,
-        author: dto.author,
-        summaryTitle: dto.summaryTitle || null,
-        narrator: dto.narrator || null,
-        description: dto.description || null,
-        categoryId: dto.categoryId,
-        folderId: dto.folderId ?? null,
-        s3Key,
-        originalFilename: dto.originalFilename,
-        sizeBytes: dto.sizeBytes,
-        contentType: dto.contentType,
-      },
-    });
+    // La comprobación de la cuota y el alta van juntas, bajo el bloqueo del usuario.
+    const summary = await this.quota.reserve(userId, dto.sizeBytes, (tx) =>
+      tx.summary.create({
+        data: {
+          userId,
+          title: dto.title,
+          author: dto.author,
+          summaryTitle: dto.summaryTitle || null,
+          narrator: dto.narrator || null,
+          description: dto.description || null,
+          categoryId: dto.categoryId,
+          folderId: dto.folderId ?? null,
+          s3Key,
+          originalFilename: dto.originalFilename,
+          sizeBytes: dto.sizeBytes,
+          contentType: dto.contentType,
+        },
+      }),
+    );
     if (dto.tags?.length) await this.tags.replaceForSummary(summary.id, userId, dto.tags);
     const uploadUrl = await this.storage.createUploadUrl(s3Key, dto.contentType, dto.sizeBytes);
     return { summary: await this.load(summary.id, userId), upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };

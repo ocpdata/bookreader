@@ -26,29 +26,32 @@ enum SummaryStatus {
 
 // Usuario único hasta que exista el login. El id fijo se crea en la migración.
 model User {
-  id              String             @id @default(uuid()) @db.VarChar(36)
-  name            String             @db.VarChar(100)
-  email           String?            @unique @db.VarChar(255)
-  passwordHash    String?            @map("password_hash") @db.VarChar(255)
-  createdAt       DateTime           @default(now()) @map("created_at")
+  id                String             @id @default(uuid()) @db.VarChar(36)
+  name              String             @db.VarChar(100)
+  email             String?            @unique @db.VarChar(255)
+  passwordHash      String?            @map("password_hash") @db.VarChar(255)
+  createdAt         DateTime           @default(now()) @map("created_at")
   // Identificador del proveedor externo (sub de Cognito) cuando se migre; nulo con el login propio.
-  externalId      String?            @unique @map("external_id") @db.VarChar(64)
+  externalId        String?            @unique @map("external_id") @db.VarChar(64)
   // PENDIENTE hasta verificar el correo; SUSPENDIDO no puede entrar (ver scripts/user-admin.js).
-  status          UserStatus         @default(ACTIVE)
-  emailVerifiedAt DateTime?          @map("email_verified_at")
-  termsAcceptedAt DateTime?          @map("terms_accepted_at")
-  termsVersion    String?            @map("terms_version") @db.VarChar(20)
-  lastLoginAt     DateTime?          @map("last_login_at")
-  summaries       Summary[]
-  progress        PlaybackProgress[]
-  tags            Tag[]
-  favorites       Favorite[]
-  sessions        Session[]
-  folders         Folder[]
-  apiTokens       ApiToken[]
-  playSessions    PlaySession[]
-  bookmarks       Bookmark[]
-  emailTokens     EmailToken[]
+  status            UserStatus         @default(ACTIVE)
+  emailVerifiedAt   DateTime?          @map("email_verified_at")
+  termsAcceptedAt   DateTime?          @map("terms_accepted_at")
+  termsVersion      String?            @map("terms_version") @db.VarChar(20)
+  // Cuotas propias de esta cuenta; nulo = el valor por defecto del servicio (ver QuotaService).
+  storageLimitBytes BigInt?            @map("storage_limit_bytes")
+  maxAudios         Int?               @map("max_audios")
+  lastLoginAt       DateTime?          @map("last_login_at")
+  summaries         Summary[]
+  progress          PlaybackProgress[]
+  tags              Tag[]
+  favorites         Favorite[]
+  sessions          Session[]
+  folders           Folder[]
+  apiTokens         ApiToken[]
+  playSessions      PlaySession[]
+  bookmarks         Bookmark[]
+  emailTokens       EmailToken[]
 
   @@map("users")
 }

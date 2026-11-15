@@ -13,12 +13,14 @@ import {
   audioContentType,
   createSummary,
   getSummary,
+  getUsage,
   listFolders,
   listTags,
   updateSummary,
   uploadCover,
+  type Usage,
 } from '../api'
-import { formatDuration } from '../format'
+import { formatBytes, formatDuration } from '../format'
 import type { Category, Folder, Summary, TagSuggestion } from '../types'
 import CoverField from './CoverField'
 import FolderSelect from './FolderSelect'
@@ -56,7 +58,15 @@ export default function SummaryForm({ categories }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(editing)
   const [saving, setSaving] = useState(false)
+  const [usage, setUsage] = useState<Usage | null>(null)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (editing) return
+    getUsage()
+      .then(setUsage)
+      .catch(() => undefined)
+  }, [editing])
 
   useEffect(() => {
     if (!id) return
@@ -109,6 +119,11 @@ export default function SummaryForm({ categories }: Props) {
       if (!file) return setError('Selecciona un archivo MP3 o M4A')
       if (!audioContentType(file.name)) return setError('El archivo debe ser MP3 o M4A')
       if (file.size > MAX_AUDIO_BYTES) return setError('El archivo supera el máximo de 200 MB')
+      // El servidor lo comprueba de nuevo; esto evita subir un archivo que se va a rechazar.
+      if (usage && usage.audios >= usage.maxAudios) return setError(`Alcanzaste el máximo de ${usage.maxAudios} audios`)
+      if (usage && file.size > usage.limitBytes - usage.usedBytes) {
+        return setError(`No hay espacio: te quedan ${formatBytes(Math.max(0, usage.limitBytes - usage.usedBytes))} y el archivo ocupa ${formatBytes(file.size)}`)
+      }
     }
 
     const fields = { title, author, summaryTitle, narrator, description, categoryId, folderId: folderId || null, tags }
@@ -225,6 +240,12 @@ export default function SummaryForm({ categories }: Props) {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </Button>
+        )}
+        {!editing && usage && (
+          <Typography variant="caption" color="text.secondary">
+            Te quedan {formatBytes(Math.max(0, usage.limitBytes - usage.usedBytes))} de {formatBytes(usage.limitBytes)} y{' '}
+            {Math.max(0, usage.maxAudios - usage.audios)} audios.
+          </Typography>
         )}
         {error && <Alert severity="error">{error}</Alert>}
         {saving && !editing && <Alert severity="info">Subiendo y verificando el audio, no cierres esta página…</Alert>}

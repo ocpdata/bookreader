@@ -9,6 +9,8 @@
  *   node scripts/user-admin.js list                            Lista los usuarios
  *   node scripts/user-admin.js suspend <correo>                Suspende la cuenta y cierra sus sesiones y apps
  *   node scripts/user-admin.js activate <correo>               Reactiva una cuenta suspendida
+ *   node scripts/user-admin.js set-quota <correo> [--gb n] [--audios n] [--reset]
+ *                                                              Cuota propia de la cuenta (--reset vuelve a los valores por defecto)
  *   node scripts/user-admin.js invite [--email x] [--uses n] [--days n] [--note "..."]
  *                                                              Crea un código de invitación (se muestra una sola vez)
  *   node scripts/user-admin.js invitations                     Lista las invitaciones (sin los códigos)
@@ -134,6 +136,30 @@ const commands = {
     console.log(`Cuenta reactivada: ${email}`);
   },
 
+  async 'set-quota'(emailArg, ...args) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    const data = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--reset') {
+        data.storageLimitBytes = null;
+        data.maxAudios = null;
+      } else if (args[i] === '--gb' || args[i] === '--audios') {
+        const value = Number(args[++i]);
+        if (!(value > 0)) throw new Error(`${args[i - 1]} debe ser un número mayor que 0`);
+        if (args[i - 1] === '--gb') data.storageLimitBytes = BigInt(Math.floor(value * 1024 ** 3));
+        else data.maxAudios = Math.floor(value);
+      } else {
+        throw new Error('Uso: set-quota <correo> [--gb n] [--audios n] [--reset]');
+      }
+    }
+    if (!Object.keys(data).length) throw new Error('Uso: set-quota <correo> [--gb n] [--audios n] [--reset]');
+    const updated = await prisma.user.update({ where: { id: user.id }, data });
+    const gb = updated.storageLimitBytes === null ? 'por defecto' : `${(Number(updated.storageLimitBytes) / 1024 ** 3).toFixed(2)} GB`;
+    console.log(`Cuota de ${email}: almacenamiento ${gb}, audios ${updated.maxAudios ?? 'por defecto'}.`);
+  },
+
   async invite(...args) {
     const options = { uses: '1', days: '14' };
     for (let i = 0; i < args.length; i += 2) {
@@ -174,7 +200,7 @@ const commands = {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!commands[command]) {
-    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|invite|invitations> ...');
+    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|set-quota|invite|invitations> ...');
     process.exitCode = 2;
     return;
   }

@@ -777,6 +777,97 @@ describe('Summaries (e2e)', () => {
     }
   });
 
+  describe('cuotas', () => {
+    const A = DEFAULT_USER_ID;
+    const SIZE = fixture('sample.mp3').length;
+    const api = () => request(app.getHttpServer());
+    const usage = async (user = A) => (await api().get('/api/usage').set(as(user))).body;
+    const setQuota = (data: { storageLimitBytes?: bigint | null; maxAudios?: number | null }, user = A) =>
+      prisma.user.update({ where: { id: user }, data });
+
+    beforeEach(async () => {
+      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null }, id);
+    });
+    afterAll(async () => {
+      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null }, id);
+      delete process.env.DEFAULT_STORAGE_LIMIT_BYTES;
+      delete process.env.DEFAULT_MAX_AUDIOS;
+    });
+
+    it('informa el uso frente a la cuota (por defecto 2 GB y 500 audios) y exige sesión', async () => {
+      expect(await usage()).toEqual({ usedBytes: 0, limitBytes: 2 * 1024 ** 3, audios: 0, maxAudios: 500, trashBytes: 0, trashAudios: 0 });
+      const audio = await createReady(A);
+      await createReady(A);
+      expect(await usage()).toMatchObject({ usedBytes: 2 * SIZE, audios: 2, trashBytes: 0 });
+      await api().delete(`/api/summaries/${audio.id}`).set(as(A)).expect(204);
+      expect(await usage()).toMatchObject({ usedBytes: 2 * SIZE, audios: 2, trashBytes: SIZE, trashAudios: 1 });
+      expect(await usage(USER_B)).toMatchObject({ usedBytes: 0, audios: 0 });
+      await api().get('/api/usage').expect(401);
+    });
+
+    it('rechaza el audio que no cabe en el almacenamiento, sin crear la fila ni la URL de carga', async () => {
+      await setQuota({ storageLimitBytes: BigInt(SIZE * 2 + 100) });
+      await createReady(A);
+      await createReady(A);
+      const res = await createSummary(A);
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('QUOTA_STORAGE');
+      expect(res.body.message).toContain('No hay espacio suficiente');
+      expect(res.body).not.toHaveProperty('upload');
+      expect(await prisma.summary.count({ where: { userId: A } })).toBe(2);
+      // La cuota es de cada cuenta.
+      expect((await createSummary(USER_B)).status).toBe(201);
+    });
+
+    it('cuentan las cargas pendientes y la papelera; se libera al borrar de forma definitiva', async () => {
+      await setQuota({ storageLimitBytes: BigInt(SIZE * 2 + 100) });
+      const pending = await createSummary(A);
+      expect(pending.status).toBe(201); // PENDING: ya reserva su espacio
+      const ready = await createReady(A);
+      expect((await createSummary(A)).status).toBe(413);
+
+      await api().delete(`/api/summaries/${ready.id}`).set(as(A)).expect(204);
+      expect((await createSummary(A)).status).toBe(413); // en la papelera sigue ocupando
+      await api().delete(`/api/trash/${ready.id}`).set(as(A)).expect(204);
+      expect((await createSummary(A)).status).toBe(201);
+    });
+
+    it('limita el número de audios', async () => {
+      await setQuota({ maxAudios: 2 });
+      await createReady(A);
+      await createReady(A);
+      const res = await createSummary(A);
+      expect([res.status, res.body.code]).toEqual([413, 'QUOTA_AUDIOS']);
+      expect(res.body.message).toContain('máximo de 2 audios');
+      expect(await usage()).toMatchObject({ audios: 2, maxAudios: 2 });
+    });
+
+    it('usa los valores por defecto del servicio y los de la cuenta cuando existen', async () => {
+      process.env.DEFAULT_STORAGE_LIMIT_BYTES = String(SIZE + 50);
+      process.env.DEFAULT_MAX_AUDIOS = '3';
+      expect(await usage()).toMatchObject({ limitBytes: SIZE + 50, maxAudios: 3 });
+      await createReady(A);
+      expect((await createSummary(A)).status).toBe(413);
+      // El límite propio de la cuenta manda sobre el valor por defecto.
+      await setQuota({ storageLimitBytes: BigInt(10 * SIZE) });
+      expect(await usage()).toMatchObject({ limitBytes: 10 * SIZE, maxAudios: 3 });
+      expect((await createSummary(A)).status).toBe(201);
+      // Un valor inválido en el entorno vuelve al predeterminado.
+      process.env.DEFAULT_STORAGE_LIMIT_BYTES = 'basura';
+      delete process.env.DEFAULT_MAX_AUDIOS;
+      await setQuota({ storageLimitBytes: null });
+      expect(await usage()).toMatchObject({ limitBytes: 2 * 1024 ** 3, maxAudios: 500 });
+      delete process.env.DEFAULT_STORAGE_LIMIT_BYTES;
+    });
+
+    it('cargas simultáneas no pueden superar la cuota', async () => {
+      await setQuota({ storageLimitBytes: BigInt(SIZE * 2 + 100) });
+      const results = await Promise.all(Array.from({ length: 6 }, () => createSummary(A)));
+      expect(results.map((r) => r.status).sort()).toEqual([201, 201, 413, 413, 413, 413]);
+      expect(await prisma.summary.count({ where: { userId: A } })).toBe(2);
+    });
+  });
+
   describe('carpetas', () => {
     const A = DEFAULT_USER_ID;
     const api = () => request(app.getHttpServer());

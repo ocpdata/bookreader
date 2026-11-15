@@ -105,6 +105,18 @@ export const resetPassword = (token: string, password: string) =>
 export const changePassword = (current: string, next: string) =>
   request<void>('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
 
+export interface Usage {
+  usedBytes: number
+  limitBytes: number
+  audios: number
+  maxAudios: number
+  /** Parte del uso que está en la papelera (cuenta hasta que se elimina de forma definitiva). */
+  trashBytes: number
+  trashAudios: number
+}
+
+export const getUsage = () => request<Usage>('/usage')
+
 export interface LinkedDevice {
   id: string
   name: string

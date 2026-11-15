@@ -2,13 +2,48 @@ import { useEffect, useState, type FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
+import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, listDevices, revokeAllDevices, revokeDevice, type LinkedDevice } from '../api'
+import { changePassword, getUsage, listDevices, revokeAllDevices, revokeDevice, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
+import { formatBytes } from '../format'
 
 const MIN_LENGTH = 12
+
+/** Espacio y audios usados frente a la cuota de la cuenta. */
+function UsageSection() {
+  const [usage, setUsage] = useState<Usage | null>(null)
+
+  useEffect(() => {
+    getUsage()
+      .then(setUsage)
+      .catch(() => undefined)
+  }, [])
+
+  if (!usage) return null
+  const percent = Math.min(100, (usage.usedBytes / usage.limitBytes) * 100)
+  const nearlyFull = percent >= 90 || usage.audios >= usage.maxAudios
+  return (
+    <Stack spacing={1}>
+      <Typography variant="h6" component="h2">
+        Almacenamiento
+      </Typography>
+      <LinearProgress variant="determinate" value={percent} color={nearlyFull ? 'warning' : 'primary'} aria-label="Espacio usado" />
+      <Typography variant="body2">
+        Usas {formatBytes(usage.usedBytes)} de {formatBytes(usage.limitBytes)} · {usage.audios} de {usage.maxAudios} audios
+      </Typography>
+      {usage.trashAudios > 0 && (
+        <Typography variant="caption" color="text.secondary">
+          Incluye {usage.trashAudios} {usage.trashAudios === 1 ? 'audio' : 'audios'} en la papelera ({formatBytes(usage.trashBytes)}): siguen
+          ocupando espacio hasta que los elimines de forma definitiva.
+        </Typography>
+      )}
+      {nearlyFull && <Alert severity="warning">Estás cerca del límite de tu cuenta.</Alert>}
+    </Stack>
+  )
+}
 
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : 'nunca'
@@ -150,6 +185,8 @@ export default function AccountView() {
           </Button>
         </Stack>
       </form>
+      <Divider />
+      <UsageSection />
       <Divider />
       <DevicesSection />
     </Stack>

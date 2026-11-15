@@ -304,6 +304,20 @@ describe('Autenticación (e2e)', () => {
       expect(run(['set-password', 'inexistente@auth.test'], PASSWORD).status).toBe(1);
     });
 
+    it('fija la cuota propia de una cuenta y permite volver a los valores por defecto', async () => {
+      expect(run(['create', 'cuota@auth.test', 'Cuota'], PASSWORD).status).toBe(0);
+      expect(run(['set-quota', 'cuota@auth.test', '--gb', '0.5', '--audios', '10']).status).toBe(0);
+      const user = await prisma.user.findUniqueOrThrow({ where: { email: 'cuota@auth.test' } });
+      expect([user.storageLimitBytes, user.maxAudios]).toEqual([BigInt(512 * 1024 ** 2), 10]);
+      expect(run(['set-quota', 'cuota@auth.test', '--reset']).status).toBe(0);
+      const reset = await prisma.user.findUniqueOrThrow({ where: { email: 'cuota@auth.test' } });
+      expect([reset.storageLimitBytes, reset.maxAudios]).toEqual([null, null]);
+      for (const args of [['--gb', '0'], ['--gb'], ['--audios', 'x'], ['--nada', '1'], []]) {
+        expect({ args, status: run(['set-quota', 'cuota@auth.test', ...args]).status }).toEqual({ args, status: 1 });
+      }
+      expect(run(['set-quota', 'inexistente@auth.test', '--gb', '1']).status).toBe(1);
+    });
+
     it('crea usuarios ya verificados, suspende y reactiva cuentas, y crea invitaciones sin guardar el código', async () => {
       expect(run(['create', 'verificado@auth.test', 'Verificado'], PASSWORD).status).toBe(0);
       const created = await prisma.user.findUniqueOrThrow({ where: { email: 'verificado@auth.test' } });
