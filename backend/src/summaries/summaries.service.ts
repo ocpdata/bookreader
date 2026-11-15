@@ -1,10 +1,12 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { coverVersion, newCoverKey, normalizeCover } from '../covers/cover-image';
 import { FoldersService } from '../folders/folders.service';
+import { AudioInfo } from '../storage/storage.service';
 import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
@@ -41,6 +43,8 @@ const withRelations = (userId: string) => ({
 });
 
 interface RelationRows {
+  id: string;
+  coverKey: string | null;
   progress: { positionSeconds: number; completed: boolean; updatedAt: Date }[];
   tags: { tag: { name: string } }[];
   favorites: unknown[];
@@ -48,10 +52,12 @@ interface RelationRows {
 
 /** Aplana las relaciones: progreso como objeto o null, etiquetas como nombres y favorito como booleano. */
 function present<T extends RelationRows>(summary: T) {
-  const { progress, tags, favorites, ...rest } = summary;
+  const { progress, tags, favorites, coverKey, ...rest } = summary;
   const row = progress[0];
   return {
     ...rest,
+    // La clave de S3 es interna; el cliente solo ve la URL (con versión para invalidar la caché).
+    coverUrl: coverKey ? `/api/summaries/${summary.id}/cover?v=${coverVersion(coverKey)}` : null,
     progress: row ? { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt } : null,
     tags: tags.map((t) => t.tag.name).sort((a, b) => a.localeCompare(b, 'es')),
     favorite: favorites.length > 0,
@@ -62,6 +68,8 @@ const emptyToNull = (value: string | undefined) => (value === undefined ? undefi
 
 @Injectable()
 export class SummariesService {
+  private readonly logger = new Logger(SummariesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
@@ -232,17 +240,23 @@ export class SummariesService {
     if (size === null) throw new BadRequestException('El archivo aún no existe en S3');
     if (size !== summary.sizeBytes) throw new BadRequestException('El tamaño del archivo subido no coincide');
 
-    let durationSeconds: number;
+    let info: AudioInfo;
     try {
-      durationSeconds = await this.storage.getAudioDurationSeconds(summary.s3Key, summary.contentType, size);
+      info = await this.storage.getAudioInfo(summary.s3Key, summary.contentType, size);
     } catch {
       throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
     }
 
     await this.prisma.summary.update({
       where: { id: summary.id },
-      data: { status: SummaryStatus.READY, durationSeconds },
+      data: { status: SummaryStatus.READY, durationSeconds: info.durationSeconds },
     });
+    // La portada incrustada es un extra: si no se puede procesar, el audio queda listo igualmente.
+    if (info.picture) {
+      await this.storeCover({ id: summary.id, s3Key: summary.s3Key, coverKey: null }, info.picture).catch((error) =>
+        this.logger.warn(`Portada incrustada ignorada en ${summary.id}: ${error}`),
+      );
+    }
     return this.load(summary.id, userId);
   }
 
@@ -277,6 +291,72 @@ export class SummariesService {
       const { count } = await tx.summary.updateMany({ where: { id: { in: unique }, userId }, data: { folderId } });
       return { moved: count };
     });
+  }
+
+  private async findForCover(id: string, userId: string) {
+    const row = await this.prisma.summary.findFirst({
+      where: { id, userId, deletedAt: null, status: SummaryStatus.READY },
+      select: { id: true, s3Key: true, coverKey: true, contentType: true, sizeBytes: true },
+    });
+    if (!row) throw new NotFoundException('Resumen no encontrado');
+    return row;
+  }
+
+  /** Guarda la portada ya normalizada con una clave nueva y retira la anterior (si falla, queda un objeto huérfano inofensivo). */
+  private async storeCover(row: { id: string; s3Key: string; coverKey: string | null }, image: Buffer) {
+    const normalized = await normalizeCover(image);
+    const key = newCoverKey(row.s3Key);
+    await this.storage.putObject(key, normalized, 'image/jpeg');
+    await this.prisma.summary.update({ where: { id: row.id }, data: { coverKey: key } });
+    if (row.coverKey) await this.dropCoverObject(row.coverKey);
+  }
+
+  private async dropCoverObject(key: string) {
+    try {
+      await this.storage.deleteObject(key);
+    } catch (error) {
+      this.logger.warn(`No se pudo borrar la portada anterior ${key}: ${error}`);
+    }
+  }
+
+  async setCover(id: string, userId: string, image: Buffer) {
+    const row = await this.findForCover(id, userId);
+    await this.storeCover(row, image);
+    return this.load(id, userId);
+  }
+
+  /** Vuelve a leer el audio y usa su portada incrustada. */
+  async coverFromAudio(id: string, userId: string) {
+    const row = await this.findForCover(id, userId);
+    let info: AudioInfo;
+    try {
+      info = await this.storage.getAudioInfo(row.s3Key, row.contentType, row.sizeBytes);
+    } catch {
+      throw new BadGatewayException('No se pudo leer el audio');
+    }
+    if (!info.picture) throw new BadRequestException('El audio no tiene portada incrustada');
+    await this.storeCover(row, info.picture);
+    return this.load(id, userId);
+  }
+
+  async removeCover(id: string, userId: string) {
+    const row = await this.findForCover(id, userId);
+    if (!row.coverKey) return;
+    await this.prisma.summary.update({ where: { id }, data: { coverKey: null } });
+    await this.dropCoverObject(row.coverKey);
+  }
+
+  async openCover(id: string, userId: string) {
+    const row = await this.prisma.summary.findFirst({
+      where: { id, userId, deletedAt: null },
+      select: { coverKey: true },
+    });
+    if (!row?.coverKey) throw new NotFoundException('El resumen no tiene portada');
+    try {
+      return await this.storage.getObjectStream(row.coverKey);
+    } catch {
+      throw new NotFoundException('El resumen no tiene portada');
+    }
   }
 
   async setFavorite(id: string, userId: string, favorite: boolean) {
@@ -377,7 +457,7 @@ export class SummariesService {
   async emptyTrash(userId: string) {
     const rows = await this.prisma.summary.findMany({
       where: { userId, deletedAt: { not: null } },
-      select: { id: true, s3Key: true },
+      select: { id: true, s3Key: true, coverKey: true },
     });
     let deleted = 0;
     for (const row of rows) if (await this.purge.destroy(row)) deleted++;
@@ -387,7 +467,7 @@ export class SummariesService {
   private async findTrashed(id: string, userId: string) {
     const row = await this.prisma.summary.findFirst({
       where: { id, userId, deletedAt: { not: null } },
-      select: { id: true, s3Key: true },
+      select: { id: true, s3Key: true, coverKey: true },
     });
     if (!row) throw new NotFoundException('Resumen no encontrado en la papelera');
     return row;

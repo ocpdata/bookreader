@@ -23,6 +23,8 @@ export interface Summary {
   categoryId: string
   category: Category
   folderId: string | null
+  /** URL de la portada (con versión) o null si no tiene. */
+  coverUrl: string | null
   originalFilename: string
   sizeBytes: number
   status: 'PENDING' | 'READY'

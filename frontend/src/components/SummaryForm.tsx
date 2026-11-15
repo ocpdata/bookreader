@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
@@ -8,9 +8,19 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, listFolders, listTags, updateSummary } from '../api'
+import {
+  MAX_AUDIO_BYTES,
+  audioContentType,
+  createSummary,
+  getSummary,
+  listFolders,
+  listTags,
+  updateSummary,
+  uploadCover,
+} from '../api'
 import { formatDuration } from '../format'
 import type { Category, Folder, Summary, TagSuggestion } from '../types'
+import CoverField from './CoverField'
 import FolderSelect from './FolderSelect'
 
 const MAX_TAGS = 10
@@ -24,6 +34,9 @@ export default function SummaryForm({ categories }: Props) {
   const navigate = useNavigate()
   const editing = Boolean(id)
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+  // Aviso tras un alta cuyo audio se guardó pero la portada no.
+  const notice = (location.state as { notice?: string } | null)?.notice
 
   const [original, setOriginal] = useState<Summary | null>(null)
   const [title, setTitle] = useState('')
@@ -36,6 +49,8 @@ export default function SummaryForm({ categories }: Props) {
   const [folders, setFolders] = useState<Folder[]>([])
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState<string[]>([])
+  const [coverUrl, setCoverUrl] = useState<string | null>(null)
+  const [pendingCover, setPendingCover] = useState<Blob | null>(null)
   const [tagQuery, setTagQuery] = useState('')
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([])
   const [file, setFile] = useState<File | null>(null)
@@ -58,6 +73,7 @@ export default function SummaryForm({ categories }: Props) {
         setFolderId(s.folderId ?? '')
         setDescription(s.description ?? '')
         setTags(s.tags)
+        setCoverUrl(s.coverUrl)
       })
       .catch((e: Error) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false))
@@ -99,7 +115,20 @@ export default function SummaryForm({ categories }: Props) {
     setSaving(true)
     try {
       if (id) await updateSummary(id, fields)
-      else await createSummary(fields, file!)
+      else {
+        const created = await createSummary(fields, file!)
+        if (pendingCover) {
+          try {
+            await uploadCover(created.id, pendingCover)
+          } catch (coverError) {
+            // El audio ya existe: se lleva a su edición para reintentar la portada sin duplicarlo.
+            navigate(`/audios/${created.id}/editar`, {
+              state: { notice: `El audio se guardó, pero la portada no se pudo subir: ${(coverError as Error).message}` },
+            })
+            return
+          }
+        }
+      }
       navigate(folderId ? `/biblioteca?carpeta=${folderId}` : '/biblioteca')
     } catch (err) {
       setError((err as Error).message)
@@ -116,6 +145,7 @@ export default function SummaryForm({ categories }: Props) {
         <Typography variant="h5" component="h1">
           {editing ? 'Editar resumen' : 'Agregar resumen'}
         </Typography>
+        {notice && <Alert severity="warning">{notice}</Alert>}
         <TextField label="Título del libro" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <TextField label="Autor del libro" value={author} onChange={(e) => setAuthor(e.target.value)} required />
         <TextField
@@ -141,6 +171,16 @@ export default function SummaryForm({ categories }: Props) {
             </MenuItem>
           ))}
         </TextField>
+        <CoverField
+          title={title}
+          seed={id ?? 'nuevo'}
+          coverUrl={coverUrl}
+          summaryId={id}
+          pending={pendingCover}
+          onPending={setPendingCover}
+          onChanged={setCoverUrl}
+          onError={setError}
+        />
         <FolderSelect folders={folders} value={folderId} onChange={setFolderId} label="Carpeta" />
         <Autocomplete
           multiple

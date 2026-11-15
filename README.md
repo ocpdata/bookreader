@@ -61,6 +61,8 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | PUT / DELETE | `/api/summaries/:id/favorite` | Marcar / quitar de favoritos |
 | GET | `/api/tags?query=` | Etiquetas del usuario con su número de audios (para autocompletar y filtrar) |
 | GET | `/api/home` | Datos de la pantalla de inicio: `continueListening` (hasta 10), `recent` (8), `favorites` (8) y `categories` con su conteo |
+| GET / POST / DELETE | `/api/summaries/:id/cover` | Descargar la portada (JPEG) / subir o reemplazar (multipart, campo `file`, hasta 1 MB) / quitarla |
+| POST | `/api/summaries/:id/cover/from-audio` | Usar la portada incrustada en el propio archivo de audio |
 | GET / POST | `/api/folders` | Listar las carpetas del usuario (plana, con `parentId` y `count` de audios directos) / crear una (`name`, `parentId` opcional) |
 | PATCH / DELETE | `/api/folders/:id` | Renombrar o mover (`name`, `parentId`; `null` = raíz) / eliminar |
 | POST | `/api/summaries/move` | Mover varios audios (`ids` hasta 100, `folderId` o `null`); todo o nada |
@@ -81,6 +83,12 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 "Eliminar" mueve el audio a la papelera: deja de verse y reproducirse, pero conserva su fila, su archivo de S3, sus etiquetas, favorito y progreso, así que **restaurar** lo devuelve intacto (la interfaz ofrece "Deshacer"). Se borra de forma definitiva desde `/papelera` (con confirmación), al vaciarla, o automáticamente a los 30 días (`TRASH_RETENTION_DAYS`).
 
 Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y las cargas que nunca se completaron en 24 h; se desactiva con `PURGE_ENABLED=false` (en desarrollo local conviene dejarlo apagado). Salvaguardas: siempre se borra primero el archivo y después la fila (si S3 falla, la fila se conserva y se reintenta); el servidor solo borra la clave exacta guardada en la fila y solo si tiene la forma `audios/{userId}/{uuid}/audio.mp3|m4a` (o el formato anterior sin usuario); cada ejecución procesa como máximo 100 filas; un audio vivo nunca se purga. El rol de IAM de la VM necesita `s3:DeleteObject` sobre `audios/*` (definido en `infra/`).
+
+## Portadas
+
+Cada resumen puede tener una portada. Al completar la carga se toma la portada incrustada en el MP3/M4A (si la trae) y, desde la edición, se puede subir otra, usar la del audio o quitarla. El servidor valida el contenido real (JPEG, PNG o WebP; rechaza SVG, GIF y cualquier otra cosa), la recodifica a un JPEG de hasta 800 px sin metadatos (EXIF/GPS) y la guarda como `cover-{8 hex}.jpg` junto al audio (`summaries.cover_key`), así que el rol de IAM no cambia. Cada carga usa una clave nueva: la URL (`?v=`) cambia y puede cachearse como inmutable; la anterior se borra. El borrado definitivo elimina audio y portada.
+
+El navegador reduce la imagen antes de subirla (800 px, JPEG) porque Nginx admite 1 MB por petición por defecto (`client_max_body_size`); el servidor aplica el mismo tope. Sin portada se muestra la inicial del título sobre un color. La portada también se envía a la pantalla de bloqueo (Media Session).
 
 ## Carpetas
 

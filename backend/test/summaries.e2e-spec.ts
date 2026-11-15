@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import sharp = require('sharp');
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
@@ -36,7 +37,19 @@ class FakeStorage {
   createUploadUrl = async (key: string) => `https://s3.test/upload/${key}`;
   createPlaybackUrl = async (key: string) => `https://s3.test/play/${key}`;
   getObjectSize = async (key: string) => this.objects.get(key)?.length ?? null;
-  getAudioDurationSeconds = async (key: string, contentType: string, size: number) => {
+  putObject = async (key: string, body: Buffer) => {
+    this.objects.set(key, body);
+  };
+  getObjectStream = async (key: string) => {
+    const body = this.objects.get(key);
+    if (!body) throw new Error('NoSuchKey');
+    const stream = new PassThrough();
+    stream.end(body);
+    return stream;
+  };
+  getAudioDurationSeconds = async (key: string, contentType: string, size: number) =>
+    (await this.getAudioInfo(key, contentType, size)).durationSeconds;
+  getAudioInfo = async (key: string, contentType: string, size: number) => {
     const real = Object.create(StorageService.prototype) as StorageService;
     (real as any).bucket = 'x';
     // El cuerpo real de S3 es un stream de bytes (no de objetos, como Readable.from).
@@ -47,7 +60,7 @@ class FakeStorage {
         return { Body: body };
       },
     };
-    return real.getAudioDurationSeconds(key, contentType, size);
+    return real.getAudioInfo(key, contentType, size);
   };
 }
 
@@ -999,6 +1012,136 @@ describe('Summaries (e2e)', () => {
       await api().delete(`/api/trash/${audio.id}`).set(as(A)).expect(204);
       await api().delete(`/api/folders/${f}`).set(as(A)).expect(200);
       expect(await tree()).toEqual([]);
+    });
+  });
+
+  describe('portadas', () => {
+    const A = DEFAULT_USER_ID;
+    const api = () => request(app.getHttpServer());
+    const png = (width = 1200, height = 900, background = '#cc3333') =>
+      sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
+
+    /** MP3 con una portada PNG incrustada (etiqueta ID3v2.3 con un fotograma APIC). */
+    function mp3WithArt(image: Buffer) {
+      const apic = Buffer.concat([Buffer.from([0]), Buffer.from('image/png\0'), Buffer.from([3]), Buffer.from([0]), image]);
+      const frame = Buffer.concat([Buffer.from('APIC'), Buffer.from([apic.length >>> 24, apic.length >>> 16, apic.length >>> 8, apic.length].map((n) => n & 255)), Buffer.from([0, 0]), apic]);
+      const size = frame.length;
+      const synchsafe = [(size >>> 21) & 127, (size >>> 14) & 127, (size >>> 7) & 127, size & 127];
+      return Buffer.concat([Buffer.from('ID3'), Buffer.from([3, 0, 0]), Buffer.from(synchsafe), frame, fixture('sample.mp3')]);
+    }
+
+    async function ready(user = A, audio?: Buffer) {
+      const created = await createSummary(user, { sizeBytes: (audio ?? fixture('sample.mp3')).length });
+      expect(created.status).toBe(201);
+      storage.objects.set(created.body.summary.s3Key, audio ?? fixture('sample.mp3'));
+      const done = await api().post(`/api/summaries/${created.body.summary.id}/complete`).set(as(user));
+      expect(done.status).toBe(200);
+      return done.body;
+    }
+    const upload = (id: string, file: Buffer | null, user = A, name = 'portada.png') => {
+      const req = api().post(`/api/summaries/${id}/cover`).set(as(user));
+      return file ? req.attach('file', file, name) : req.field('x', 'y');
+    };
+    const coverKeys = () => [...storage.objects.keys()].filter((k) => /cover-[0-9a-f]{8}\.jpg$/.test(k));
+
+    it('sube una portada, la normaliza a JPEG de 800 px y la sirve solo a su dueño', async () => {
+      const audio = await ready();
+      expect(audio.coverUrl).toBeNull();
+      expect(audio).not.toHaveProperty('coverKey');
+      await api().get(`/api/summaries/${audio.id}/cover`).set(as(A)).expect(404);
+
+      const res = await upload(audio.id, await png());
+      expect(res.status).toBe(200);
+      expect(res.body.coverUrl).toMatch(new RegExp(`^/api/summaries/${audio.id}/cover\\?v=[0-9a-f]{8}$`));
+      expect(res.body).not.toHaveProperty('coverKey');
+      expect(coverKeys()).toHaveLength(1);
+      expect(coverKeys()[0]).toContain(`audios/${A}/`);
+
+      const img = await api().get(res.body.coverUrl).set(as(A)).buffer(true).parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+      expect(img.status).toBe(200);
+      expect(img.headers['content-type']).toBe('image/jpeg');
+      expect(img.headers['cache-control']).toContain('immutable');
+      const meta = await sharp(img.body).metadata();
+      expect([meta.format, meta.width, meta.height]).toEqual(['jpeg', 800, 600]);
+
+      await api().get(res.body.coverUrl).set(as(USER_B)).expect(404);
+      await api().get(res.body.coverUrl).expect(401);
+      await upload(audio.id, await png(), USER_B).then((r) => expect(r.status).toBe(404));
+    });
+
+    it('rechaza archivos que no son una imagen válida, formatos no permitidos y archivos grandes', async () => {
+      const audio = await ready();
+      expect((await upload(audio.id, null)).status).toBe(400);
+      expect((await upload(audio.id, Buffer.from('esto no es una imagen'))).status).toBe(400);
+      // Un SVG (que podría contener scripts) o un GIF no se aceptan aunque sean imágenes.
+      expect((await upload(audio.id, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>'), A, 'x.svg')).status).toBe(400);
+      const gif = await sharp(await png(20, 20)).gif().toBuffer();
+      expect((await upload(audio.id, gif, A, 'x.gif')).status).toBe(400);
+      expect((await upload(audio.id, Buffer.alloc(1_000_001, 1))).status).toBe(413);
+      expect(coverKeys()).toHaveLength(0);
+      const after = await api().get(`/api/summaries/${audio.id}`).set(as(A));
+      expect(after.body.coverUrl).toBeNull();
+    });
+
+    it('al reemplazar una portada la URL cambia y el objeto anterior se borra; al quitarla desaparece', async () => {
+      const audio = await ready();
+      const first = (await upload(audio.id, await png())).body.coverUrl;
+      const [oldKey] = coverKeys();
+      const second = (await upload(audio.id, await png(100, 100, '#3366cc'))).body.coverUrl;
+      expect(second).not.toBe(first);
+      expect(coverKeys()).toHaveLength(1);
+      expect(coverKeys()[0]).not.toBe(oldKey);
+      expect(storage.deleted).toContain(oldKey);
+
+      await api().delete(`/api/summaries/${audio.id}/cover`).set(as(A)).expect(204);
+      expect(coverKeys()).toHaveLength(0);
+      expect((await api().get(`/api/summaries/${audio.id}`).set(as(A))).body.coverUrl).toBeNull();
+      await api().delete(`/api/summaries/${audio.id}/cover`).set(as(A)).expect(204);
+      await api().delete(`/api/summaries/${audio.id}/cover`).set(as(USER_B)).expect(404);
+    });
+
+    it('toma la portada incrustada del audio al completar la carga y también a petición', async () => {
+      const withArt = await ready(A, mp3WithArt(await png(600, 600)));
+      expect(withArt.coverUrl).not.toBeNull();
+      expect(coverKeys()).toHaveLength(1);
+
+      const plain = await ready();
+      expect(plain.coverUrl).toBeNull();
+      const none = await api().post(`/api/summaries/${plain.id}/cover/from-audio`).set(as(A));
+      expect(none.status).toBe(400);
+
+      // Un audio sin portada al completar puede recibirla después desde el propio archivo.
+      const later = await ready(A, mp3WithArt(await png(300, 300)));
+      await api().delete(`/api/summaries/${later.id}/cover`).set(as(A)).expect(204);
+      const again = await api().post(`/api/summaries/${later.id}/cover/from-audio`).set(as(A));
+      expect(again.status).toBe(200);
+      expect(again.body.coverUrl).not.toBeNull();
+      await api().post(`/api/summaries/${later.id}/cover/from-audio`).set(as(USER_B)).expect(404);
+    });
+
+    it('una portada incrustada ilegible no impide completar el audio', async () => {
+      const audio = await ready(A, mp3WithArt(Buffer.from('basura que no es una imagen')));
+      expect(audio.status).toBe('READY');
+      expect(audio.coverUrl).toBeNull();
+    });
+
+    it('el borrado definitivo elimina también la portada, y la lista y el inicio la incluyen', async () => {
+      const audio = await ready();
+      await upload(audio.id, await png());
+      const [coverKey] = coverKeys();
+      const list = await api().get('/api/summaries').set(as(A));
+      expect(list.body[0].coverUrl).toContain('/cover?v=');
+      const home = await api().get('/api/home').set(as(A));
+      expect(home.body.recent[0].coverUrl).toContain('/cover?v=');
+
+      await api().delete(`/api/summaries/${audio.id}`).set(as(A)).expect(204);
+      await api().delete(`/api/trash/${audio.id}`).set(as(A)).expect(204);
+      expect(storage.deleted).toEqual(expect.arrayContaining([audio.s3Key, coverKey]));
+      expect(coverKeys()).toHaveLength(0);
     });
   });
 

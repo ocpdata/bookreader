@@ -16,10 +16,17 @@ const PLAYBACK_TTL_SECONDS = 60 * 60;
 const AUDIO_PARSE_TIMEOUT_MS = 45_000;
 
 /**
- * Únicas claves que el servidor puede borrar: `audios/{userId}/{uuid}/audio.ext` o el formato
- * anterior `audios/{uuid}/audio.ext`. Una clave con otra forma (prefijos, `..`, vacía) se rechaza.
+ * Únicas claves que el servidor puede borrar: el audio (`audios/{userId}/{uuid}/audio.ext` o el formato
+ * anterior `audios/{uuid}/audio.ext`) y su portada (`cover-{8 hex}.jpg` en el mismo prefijo). Una clave
+ * con otra forma (prefijos, `..`, vacía) se rechaza.
  */
-const DELETABLE_KEY = /^audios\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?\/audio\.(mp3|m4a)$/;
+const DELETABLE_KEY = /^audios\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?\/(audio\.(mp3|m4a)|cover-[0-9a-f]{8}\.jpg)$/;
+
+export interface AudioInfo {
+  durationSeconds: number;
+  /** Portada incrustada en las etiquetas del archivo, sin procesar. */
+  picture: Buffer | null;
+}
 
 @Injectable()
 export class StorageService {
@@ -63,6 +70,11 @@ export class StorageService {
    * legible (comprueba el contenido real, no solo la extensión).
    */
   async getAudioDurationSeconds(key: string, contentType: string, sizeBytes: number): Promise<number> {
+    return (await this.getAudioInfo(key, contentType, sizeBytes)).durationSeconds;
+  }
+
+  /** Duración y portada incrustada, en una sola lectura del archivo. */
+  async getAudioInfo(key: string, contentType: string, sizeBytes: number): Promise<AudioInfo> {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), AUDIO_PARSE_TIMEOUT_MS);
     let body: Readable | undefined;
@@ -76,11 +88,22 @@ export class StorageService {
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
         throw new Error('No se pudo determinar la duración del audio');
       }
-      return Math.max(1, Math.round(duration));
+      const picture = metadata.common.picture?.[0]?.data;
+      return { durationSeconds: Math.max(1, Math.round(duration)), picture: picture ? Buffer.from(picture) : null };
     } finally {
       clearTimeout(timer);
       body?.destroy();
     }
+  }
+
+  putObject(key: string, body: Buffer, contentType: string) {
+    return this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }));
+  }
+
+  /** Cuerpo del objeto como stream; lanza si no existe. */
+  async getObjectStream(key: string): Promise<Readable> {
+    const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    return object.Body as Readable;
   }
 
   /** Borra un objeto (idempotente: si no existe, tampoco falla). Rechaza claves con forma inesperada. */

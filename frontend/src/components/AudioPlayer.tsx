@@ -23,6 +23,8 @@ interface Props {
   src: string
   title: string
   artist: string
+  /** Portada para la pantalla de bloqueo y los controles del sistema. */
+  artwork?: string | null
   /** Duración conocida por el servidor, se usa mientras el navegador carga los metadatos. */
   durationSeconds?: number | null
   /** Posición desde la que arrancar (progreso guardado). Solo se lee al montar el reproductor. */
@@ -38,7 +40,7 @@ function loadRate(): number {
   return RATES.includes(saved) ? saved : 1
 }
 
-export default function AudioPlayer({ src, title, artist, durationSeconds, startAt = 0, onProgress, onError }: Props) {
+export default function AudioPlayer({ src, title, artist, artwork, durationSeconds, startAt = 0, onProgress, onError }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const resumeAt = useRef(startAt)
   const lastSaveAt = useRef(0)
@@ -104,7 +106,11 @@ export default function AudioPlayer({ src, title, artist, durationSeconds, start
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
     const session = navigator.mediaSession
-    session.metadata = new MediaMetadata({ title, artist })
+    session.metadata = new MediaMetadata({
+      title,
+      artist,
+      artwork: artwork ? [{ src: new URL(artwork, window.location.href).href, sizes: '800x800', type: 'image/jpeg' }] : [],
+    })
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
       ['play', () => void audioRef.current?.play()],
       ['pause', () => audioRef.current?.pause()],
@@ -121,7 +127,7 @@ export default function AudioPlayer({ src, title, artist, durationSeconds, start
     return () => {
       for (const [action] of handlers) session.setActionHandler(action, null)
     }
-  }, [title, artist])
+  }, [title, artist, artwork])
 
   const shown = seeking ?? current
   const total = duration || durationSeconds || 0

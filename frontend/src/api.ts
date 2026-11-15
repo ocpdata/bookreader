@@ -33,7 +33,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`/api${path}`, {
       ...init,
-      headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+      // Con FormData el navegador pone el Content-Type (con el boundary).
+      headers: init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : undefined,
     })
   } catch {
     throw new Error('No se pudo conectar con el servidor. ¿Está corriendo el backend?')
@@ -109,6 +110,16 @@ export const deleteFolder = (id: string) =>
 
 export const moveSummaries = (ids: string[], folderId: string | null) =>
   request<{ moved: number }>('/summaries/move', { method: 'POST', body: JSON.stringify({ ids, folderId }) })
+
+export const uploadCover = (id: string, image: Blob) => {
+  const body = new FormData()
+  body.append('file', image, 'portada.jpg')
+  return request<Summary>(`/summaries/${id}/cover`, { method: 'POST', body })
+}
+
+export const coverFromAudio = (id: string) => request<Summary>(`/summaries/${id}/cover/from-audio`, { method: 'POST' })
+
+export const removeCover = (id: string) => request<void>(`/summaries/${id}/cover`, { method: 'DELETE' })
 
 export const getHome = async () => {
   await settlePendingSaves()

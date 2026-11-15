@@ -64,6 +64,8 @@ model Summary {
   categoryId       String             @map("category_id") @db.VarChar(36)
   category         Category           @relation(fields: [categoryId], references: [id])
   s3Key            String             @unique @map("s3_key") @db.VarChar(255)
+  // Portada normalizada (JPEG) en el mismo prefijo del audio; nulo si no tiene.
+  coverKey         String?            @map("cover_key") @db.VarChar(255)
   originalFilename String             @map("original_filename") @db.VarChar(255)
   sizeBytes        Int                @map("size_bytes")
   contentType      String             @map("content_type") @db.VarChar(100)

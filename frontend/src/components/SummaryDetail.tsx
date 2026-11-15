@@ -11,6 +11,7 @@ import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
 import ConfirmDialog from './ConfirmDialog'
+import CoverImage from './CoverImage'
 
 export default function SummaryDetail() {
   const { id = '' } = useParams()
@@ -132,16 +133,21 @@ export default function SummaryDetail() {
       {!summary && !error && <CircularProgress size={28} />}
       {summary && (
         <>
-          <Typography variant="h5" component="h1">
-            {summary.title}
-          </Typography>
-          {summary.summaryTitle && <Typography variant="subtitle1">{summary.summaryTitle}</Typography>}
-          <Typography color="text.secondary">{meta}</Typography>
-          {summary.narrator && (
-            <Typography variant="body2" color="text.secondary">
-              Narra: {summary.narrator}
-            </Typography>
-          )}
+          <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+            <CoverImage src={summary.coverUrl} title={summary.title} seed={summary.id} size={120} />
+            <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+              <Typography variant="h5" component="h1">
+                {summary.title}
+              </Typography>
+              {summary.summaryTitle && <Typography variant="subtitle1">{summary.summaryTitle}</Typography>}
+              <Typography color="text.secondary">{meta}</Typography>
+              {summary.narrator && (
+                <Typography variant="body2" color="text.secondary">
+                  Narra: {summary.narrator}
+                </Typography>
+              )}
+            </Stack>
+          </Stack>
           {summary.description && <Typography>{summary.description}</Typography>}
 
           {summary.tags.length > 0 && (
@@ -173,6 +179,7 @@ export default function SummaryDetail() {
               src={url}
               title={summary.title}
               artist={summary.author}
+              artwork={summary.coverUrl}
               durationSeconds={summary.durationSeconds}
               startAt={startAt}
               onProgress={handleProgress}

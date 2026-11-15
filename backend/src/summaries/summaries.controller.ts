@@ -1,4 +1,24 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { MAX_COVER_BYTES } from '../covers/cover-image';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SummariesService } from './summaries.service';
 import {
@@ -33,6 +53,43 @@ export class SummariesController {
   @Post()
   create(@CurrentUser() userId: string, @Body() dto: CreateSummaryDto) {
     return this.summaries.create(userId, dto);
+  }
+
+  /** Portada del audio (JPEG normalizado). La URL lleva ?v= con la versión, así que se puede cachear sin riesgo. */
+  @Get(':id/cover')
+  async cover(
+    @CurrentUser() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const stream = await this.summaries.openCover(id, userId);
+    res.set({ 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+    return new StreamableFile(stream, { type: 'image/jpeg' });
+  }
+
+  @Post(':id/cover')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_COVER_BYTES, files: 1 } }))
+  setCover(
+    @CurrentUser() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Adjunta la imagen en el campo "file"');
+    return this.summaries.setCover(id, userId, file.buffer);
+  }
+
+  /** Usa la portada incrustada en el propio archivo de audio. */
+  @Post(':id/cover/from-audio')
+  @HttpCode(200)
+  coverFromAudio(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.summaries.coverFromAudio(id, userId);
+  }
+
+  @Delete(':id/cover')
+  @HttpCode(204)
+  removeCover(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.summaries.removeCover(id, userId);
   }
 
   @Post(':id/complete')
