@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import * as request from 'supertest';
 import { AccountEraser } from '../src/accounts/account-eraser';
 import { AppModule } from '../src/app.module';
+import { sharedCategory } from './shared-category';
 import { configureApp } from '../src/app.setup';
 import { TERMS_VERSION } from '../src/auth/registration.config';
 import { DEFAULT_USER_ID } from '../src/auth/user.constants';
@@ -91,7 +92,7 @@ describe('Cuenta: eliminación y términos (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = new PrismaClient();
-    categoryId = (await prisma.category.upsert({ where: { name: 'Prueba' }, update: {}, create: { name: 'Prueba' } })).id;
+    categoryId = (await sharedCategory(prisma, 'Prueba')).id;
   });
 
   beforeEach(() => {
@@ -119,6 +120,9 @@ describe('Cuenta: eliminación y términos (e2e)', () => {
       const other = await createUser();
       const keys = await populate(user.id);
       const otherKeys = await populate(other.id);
+      const category = await prisma.category.create({ data: { userId: user.id, name: 'Personal' } });
+      await prisma.summary.updateMany({ where: { userId: user.id }, data: { categoryId: category.id } });
+      const otherCategory = await prisma.category.create({ data: { userId: other.id, name: 'Personal' } });
       const cookie = await webLogin(user.email!);
       const device = (await api().post('/login').send({ username: user.email, password: PASSWORD })).body.user.token;
       expect(await rowsOf(user.id)).toMatchObject({ summaries: 3, folders: 3, tags: 1, favorites: 1, progress: 1, bookmarks: 1, devices: 1, playSessions: 1 });
@@ -128,6 +132,8 @@ describe('Cuenta: eliminación y términos (e2e)', () => {
       expect(String(res.headers['set-cookie'])).toMatch(/br_session=;/);
 
       expect(Object.values(await rowsOf(user.id)).every((n) => n === 0)).toBe(true);
+      expect(await prisma.category.findUnique({ where: { id: category.id } })).toBeNull();
+      expect(await prisma.category.findUnique({ where: { id: otherCategory.id } })).not.toBeNull();
       // Audios (vivo, papelera y pendiente) y portada: todos los archivos de la cuenta, y solo esos.
       expect(storage.deleted.sort()).toEqual(keys.sort());
       expect(keys).toHaveLength(4);

@@ -10,6 +10,7 @@ import { FoldersService } from '../folders/folders.service';
 import { AudioInfo } from '../storage/storage.service';
 import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
+import { CategoriesService } from '../categories/categories.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
 import {
   AUDIO_TYPES,
@@ -37,7 +38,7 @@ const HOME_SECTION_LIMIT = 8;
 const COMPLETE_RATIO = 0.95;
 
 const withRelations = (userId: string) => ({
-  category: true,
+  category: { select: { id: true, name: true } },
   progress: { where: { userId } },
   tags: { include: { tag: true } },
   favorites: { where: { userId } },
@@ -78,6 +79,7 @@ export class SummariesService {
     private readonly folders: FoldersService,
     private readonly quota: QuotaService,
     private readonly purge: PurgeService,
+    private readonly categories: CategoriesService,
   ) {}
 
   async list(
@@ -208,29 +210,33 @@ export class SummariesService {
     if (!AUDIO_TYPES[dto.contentType].includes(ext)) {
       throw new BadRequestException('La extensión del archivo no coincide con su tipo (.mp3 o .m4a)');
     }
-    await this.assertCategory(dto.categoryId);
     if (dto.folderId) await this.folders.assertOwned(userId, dto.folderId);
 
     // Clave nueva por carga y prefijada por usuario: una URL prefirmada nunca sobrescribe un audio.
     const s3Key = `audios/${userId}/${randomUUID()}/audio${ext}`;
     // La comprobación de la cuota y el alta van juntas, bajo el bloqueo del usuario.
-    const summary = await this.quota.reserve(userId, dto.sizeBytes, (tx) =>
-      tx.summary.create({
-        data: {
-          userId,
-          title: dto.title,
-          author: dto.author,
-          summaryTitle: dto.summaryTitle || null,
-          narrator: dto.narrator || null,
-          description: dto.description || null,
-          categoryId: dto.categoryId,
-          folderId: dto.folderId ?? null,
-          s3Key,
-          originalFilename: dto.originalFilename,
-          sizeBytes: dto.sizeBytes,
-          contentType: dto.contentType,
-        },
-      }),
+    const summary = await this.quota.reserve(
+      userId,
+      dto.sizeBytes,
+      async (tx) => {
+        await this.categories.assertAccessible(tx, userId, dto.categoryId);
+        return tx.summary.create({
+          data: {
+            userId,
+            title: dto.title,
+            author: dto.author,
+            summaryTitle: dto.summaryTitle || null,
+            narrator: dto.narrator || null,
+            description: dto.description || null,
+            categoryId: dto.categoryId,
+            folderId: dto.folderId ?? null,
+            s3Key,
+            originalFilename: dto.originalFilename,
+            sizeBytes: dto.sizeBytes,
+            contentType: dto.contentType,
+          },
+        });
+      },
     );
     if (dto.tags?.length) await this.tags.replaceForSummary(summary.id, userId, dto.tags);
     const uploadUrl = await this.storage.createUploadUrl(s3Key, dto.contentType, dto.sizeBytes);
@@ -267,19 +273,23 @@ export class SummariesService {
 
   async update(id: string, userId: string, dto: UpdateSummaryDto) {
     await this.get(id, userId);
-    if (dto.categoryId) await this.assertCategory(dto.categoryId);
     if (dto.folderId) await this.folders.assertOwned(userId, dto.folderId);
-    await this.prisma.summary.update({
-      where: { id },
-      data: {
-        title: dto.title,
-        author: dto.author,
-        summaryTitle: emptyToNull(dto.summaryTitle),
-        narrator: emptyToNull(dto.narrator),
-        description: emptyToNull(dto.description),
-        categoryId: dto.categoryId,
-        folderId: dto.folderId,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      if (dto.categoryId)
+        await this.categories.assertAccessible(tx, userId, dto.categoryId);
+      await tx.summary.update({
+        where: { id },
+        data: {
+          title: dto.title,
+          author: dto.author,
+          summaryTitle: emptyToNull(dto.summaryTitle),
+          narrator: emptyToNull(dto.narrator),
+          description: emptyToNull(dto.description),
+          categoryId: dto.categoryId,
+          folderId: dto.folderId,
+        },
+      });
     });
     if (dto.tags !== undefined) await this.tags.replaceForSummary(id, userId, dto.tags);
     return this.load(id, userId);
@@ -487,8 +497,4 @@ export class SummariesService {
     return { url: await this.storage.createPlaybackUrl(summary.s3Key) };
   }
 
-  private async assertCategory(categoryId: string) {
-    const exists = await this.prisma.category.findUnique({ where: { id: categoryId } });
-    if (!exists) throw new BadRequestException('La categoría no existe');
-  }
 }

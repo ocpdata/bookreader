@@ -24,7 +24,8 @@ import {
   updateFolder,
 } from '../api'
 import { childrenOf, pathLabel, pathOf, subtreeIds, totalCount } from '../folders'
-import type { Category, Folder, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
+import type { SelectableCategory, Folder, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
+import CategoriesDialog from './CategoriesDialog'
 import ConfirmDialog from './ConfirmDialog'
 import FolderCard from './FolderCard'
 import FolderDialog from './FolderDialog'
@@ -45,10 +46,13 @@ const STATUSES: { value: StatusFilter | ''; label: string }[] = [
 ]
 
 interface Props {
-  categories: Category[]
+  categories: SelectableCategory[]
+  categoriesReady: boolean
+  onCreateCategory: (name: string) => Promise<SelectableCategory>
+  onDeleteCategory: (id: string) => Promise<void>
 }
 
-export default function LibraryView({ categories }: Props) {
+export default function LibraryView({ categories, categoriesReady, onCreateCategory, onDeleteCategory }: Props) {
   const navigate = useNavigate()
   const location = useLocation()
   // Filtros y orden viven en la URL: el botón "atrás" vuelve a la misma búsqueda.
@@ -78,6 +82,7 @@ export default function LibraryView({ categories }: Props) {
   const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
   const [toMove, setToMove] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
 
   const updateParams = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params)
@@ -246,16 +251,20 @@ export default function LibraryView({ categories }: Props) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
         <Typography variant="h5" component="h1">
           {browsing && current ? current.name : 'Mi biblioteca'}
         </Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
+          <Button disabled={!categoriesReady} onClick={() => setCategoriesOpen(true)}>Categorías</Button>
           <Button onClick={() => setFolderDialog({ folder: null })}>+ Nueva carpeta</Button>
           <Button variant="contained" onClick={() => navigate(`/audios/nuevo${currentId ? `?carpeta=${currentId}` : ''}`)}>
             + Agregar resumen
           </Button>
         </Stack>
+        <CategoriesDialog open={categoriesOpen} categories={categories} onCreate={onCreateCategory}
+          onDelete={onDeleteCategory} onClose={() => setCategoriesOpen(false)}
+          onDeleted={(id) => { if (categoryId === id) updateParams({ categoria: '' }) }} />
       </Stack>
 
       {browsing && currentId && (

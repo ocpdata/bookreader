@@ -3,6 +3,10 @@ export interface Category {
   name: string
 }
 
+export interface SelectableCategory extends Category {
+  isCustom: boolean
+}
+
 export interface Progress {
   positionSeconds: number
   completed: boolean

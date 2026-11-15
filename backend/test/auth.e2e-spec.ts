@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { spawnSync } from 'node:child_process';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { sharedCategory } from './shared-category';
 import { configureApp } from '../src/app.setup';
 import { SessionService } from '../src/auth/session.service';
 import { DEFAULT_USER_ID } from '../src/auth/user.constants';
@@ -49,7 +50,7 @@ describe('Autenticación (e2e)', () => {
     await app.init();
     sessions = module.get(SessionService);
     prisma = new PrismaClient();
-    categoryId = (await prisma.category.upsert({ where: { name: 'Prueba' }, update: {}, create: { name: 'Prueba' } })).id;
+    categoryId = (await sharedCategory(prisma, 'Prueba')).id;
   });
 
   /**

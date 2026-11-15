@@ -1,5 +1,5 @@
 import type {
-  Category,
+  SelectableCategory,
   Folder,
   HomeData,
   LibraryFilters,
@@ -138,7 +138,13 @@ export const revokeDevice = (id: string) => request<void>(`/auth/devices/${id}`,
 
 export const revokeAllDevices = () => request<void>('/auth/devices', { method: 'DELETE' })
 
-export const listCategories = () => request<Category[]>('/categories')
+export const listCategories = () => request<SelectableCategory[]>('/categories')
+
+export const createCategory = (name: string) =>
+  request<SelectableCategory>('/categories', { method: 'POST', body: JSON.stringify({ name }) })
+
+export const deleteCategory = (id: string) =>
+  request<void>(`/categories/${id}`, { method: 'DELETE' })
 
 /** folderId: id de carpeta, "root" para los audios sin carpeta o undefined para toda la biblioteca. */
 export async function listSummaries(

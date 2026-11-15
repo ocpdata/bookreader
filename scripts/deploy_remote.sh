@@ -25,6 +25,16 @@ rollback() {
   echo "::error::El despliegue falló; revirtiendo." >&2
   sudo -n /usr/bin/systemctl status bookreader-api 2>&1 | tail -n 20 >&2 || true
   if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+    # Las versiones anteriores exponen todas las categorías privadas y no pueden servir esta base.
+    if [[ -f "${release_root}/backend/dist/categories/categories.service.js" \
+      && ! -f "${previous_release}/backend/dist/categories/categories.service.js" ]]; then
+      if sudo systemctl stop bookreader-api; then
+        echo "::error::Rollback automático bloqueado: la versión anterior no aísla categorías privadas. El servicio quedó detenido; despliega una versión compatible." >&2
+      else
+        echo "::error::Rollback bloqueado y no se pudo detener bookreader-api; revisa el servicio manualmente." >&2
+      fi
+      return
+    fi
     ln -sfn "$previous_release" "$current_link"
     sudo systemctl restart bookreader-api || true
     echo "Revertido a ${previous_release}" >&2

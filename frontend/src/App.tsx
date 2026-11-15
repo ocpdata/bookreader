@@ -8,7 +8,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import { listCategories } from './api'
+import { createCategory, deleteCategory, listCategories, type CurrentUser } from './api'
 import { useAuth } from './auth'
 import AccountView from './components/AccountView'
 import ForgotPasswordView from './components/ForgotPasswordView'
@@ -23,7 +23,7 @@ import SummaryForm from './components/SummaryForm'
 import TermsGate from './components/TermsGate'
 import TrashView from './components/TrashView'
 import VerifyEmailView from './components/VerifyEmailView'
-import type { Category } from './types'
+import type { SelectableCategory } from './types'
 
 const navSx = { '&.active': { textDecoration: 'underline' } }
 
@@ -45,16 +45,37 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export default function App() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryState, setCategoryState] = useState<{ user: CurrentUser; items: SelectableCategory[] } | null>(null)
   const [error, setError] = useState('')
+  const categories = user && categoryState?.user === user ? categoryState.items : []
+  const categoriesReady = Boolean(user && categoryState?.user === user)
 
   // Las categorías requieren sesión: se cargan al iniciarla.
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     listCategories()
-      .then(setCategories)
-      .catch((e: Error) => setError(e.message))
+      .then((items) => { if (!cancelled) setCategoryState({ user, items }) })
+      .catch((e: Error) => { if (!cancelled) setError(e.message) })
+    return () => { cancelled = true }
   }, [user])
+
+  async function addCategory(name: string) {
+    if (!user) throw new Error('Inicia sesión para crear una categoría')
+    const category = await createCategory(name)
+    setCategoryState((previous) => previous?.user === user
+      ? { ...previous, items: [...previous.items, category].sort((a, b) => a.name.localeCompare(b.name, 'es')) }
+      : previous)
+    return category
+  }
+
+  async function removeCategory(id: string) {
+    if (!user) throw new Error('Inicia sesión para eliminar una categoría')
+    await deleteCategory(id)
+    setCategoryState((previous) => previous?.user === user
+      ? { ...previous, items: previous.items.filter((category) => category.id !== id) }
+      : previous)
+  }
 
   async function handleLogout() {
     await logout()
@@ -106,12 +127,12 @@ export default function App() {
           <Route path="/terminos" element={<TermsView />} />
           <Route path="/privacidad" element={<PrivacyView />} />
           <Route path="/" element={<RequireAuth><HomeView /></RequireAuth>} />
-          <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} /></RequireAuth>} />
+          <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
-          <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} /></RequireAuth>} />
+          <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/audios/:id" element={<RequireAuth><SummaryDetail /></RequireAuth>} />
-          <Route path="/audios/:id/editar" element={<RequireAuth><SummaryForm categories={categories} /></RequireAuth>} />
+          <Route path="/audios/:id/editar" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Container>

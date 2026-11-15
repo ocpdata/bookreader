@@ -44,7 +44,9 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 
 | Método | Endpoint | Función |
 | --- | --- | --- |
-| GET | `/api/categories` | Listar categorías |
+| GET | `/api/categories` | Listar categorías predeterminadas y propias (`isCustom` identifica las propias) |
+| POST | `/api/categories` | Crear categoría privada con `name` |
+| DELETE | `/api/categories/:id` | Eliminar una categoría propia sin audios asociados |
 | GET | `/api/summaries` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos ni mayúsculas). Parámetros: `search` (título, autor, título del resumen o etiqueta), `categoryId`, `folderId` (id o `root` = sin carpeta) con `includeSubfolders=true`, `tag`, `favorite=true`, `status=finished\|unfinished`, `sort=recent\|title\|duration\|listened` |
 | GET | `/api/summaries/:id` | Consultar un resumen |
 | POST | `/api/summaries` | Crear registro `PENDING` y obtener URL de carga |
@@ -77,6 +79,8 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 ## Pantallas
 
 `/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. `/papelera` lista lo eliminado. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
+
+Las categorías predeterminadas son compartidas. Cada usuario puede crear categorías privadas desde la biblioteca o el formulario de audio y eliminar las suyas si no tienen audios asociados, incluidos los pendientes y los de la papelera. Los nombres se comparan sin distinguir mayúsculas ni acentos; no se permiten duplicados frente a las categorías visibles del usuario.
 
 ## Papelera y limpieza
 
@@ -177,7 +181,7 @@ Seguridad: SSH (22) solo desde `allowed_cidr_blocks` (Terraform rechaza `0.0.0.0
 Los dos workflows son `workflow_dispatch`: ninguno se ejecuta solo con un `push`. Se lanzan desde la pestaña **Actions**.
 
 1. **`infra`**: Terraform sobre `infra/`. Ejecútalo primero con `apply=false`, revisa el plan en el resumen del job y luego con `apply=true`.
-2. **`deploy`**: compila backend y frontend en GitHub, empaqueta un release, lo envía por SSH a la VM y lo activa (con migraciones de Prisma opcionales). El release queda en `/var/app/bookreader/releases/<id>`, `current` apunta al activo y se conservan los últimos 5. Si el healthcheck falla, vuelve al release anterior.
+2. **`deploy`**: compila backend y frontend en GitHub, empaqueta un release, lo envía por SSH a la VM y lo activa (con migraciones de Prisma opcionales). El release queda en `/var/app/bookreader/releases/<id>`, `current` apunta al activo y se conservan los últimos 5. Si el healthcheck falla, vuelve al release anterior cuando es compatible. Tras la migración de categorías privadas no es seguro volver a una versión anterior a ella: el rollback automático a esa versión se bloquea y se detiene el servicio; hay que desplegar una versión compatible.
 
 3. **`https`**: configura Let's Encrypt y Nginx para el dominio de `APP_DOMAIN` (hoy `audio.digitalvs.com`; el registro A debe apuntar a la IP de la VM). Orden: `https` con `stage=prepare` → `infra` con `apply=true` (abre el puerto 80) → `https` con `stage=issue`. La renovación es automática (`certbot.timer`). Después, define `APP_ORIGIN=https://<dominio>` y vuelve a ejecutar `deploy` para añadirlo al CORS del bucket.
 

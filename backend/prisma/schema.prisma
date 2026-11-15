@@ -48,6 +48,7 @@ model User {
   favorites         Favorite[]
   sessions          Session[]
   folders           Folder[]
+  categories        Category[]
   apiTokens         ApiToken[]
   playSessions      PlaySession[]
   bookmarks         Bookmark[]
@@ -58,9 +59,14 @@ model User {
 
 model Category {
   id        String    @id @default(uuid()) @db.VarChar(36)
-  name      String    @unique @db.VarChar(100)
+  name      String    @db.VarChar(100)
+  // Solo las predeterminadas usan este campo; permite su unicidad pese a userId nulo en MySQL.
+  sharedName String?  @unique @map("shared_name") @db.VarChar(100)
+  userId    String?   @map("user_id") @db.VarChar(36)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   summaries Summary[]
 
+  @@unique([userId, name])
   @@map("categories")
 }
 

@@ -21,17 +21,21 @@ import {
   type Usage,
 } from '../api'
 import { formatBytes, formatDuration } from '../format'
-import type { Category, Folder, Summary, TagSuggestion } from '../types'
+import type { SelectableCategory, Folder, Summary, TagSuggestion } from '../types'
+import CategoriesDialog from './CategoriesDialog'
 import CoverField from './CoverField'
 import FolderSelect from './FolderSelect'
 
 const MAX_TAGS = 10
 
 interface Props {
-  categories: Category[]
+  categories: SelectableCategory[]
+  categoriesReady: boolean
+  onCreateCategory: (name: string) => Promise<SelectableCategory>
+  onDeleteCategory: (id: string) => Promise<void>
 }
 
-export default function SummaryForm({ categories }: Props) {
+export default function SummaryForm({ categories, categoriesReady, onCreateCategory, onDeleteCategory }: Props) {
   const { id } = useParams()
   const navigate = useNavigate()
   const editing = Boolean(id)
@@ -60,6 +64,7 @@ export default function SummaryForm({ categories }: Props) {
   const [saving, setSaving] = useState(false)
   const [usage, setUsage] = useState<Usage | null>(null)
   const [error, setError] = useState('')
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
 
   useEffect(() => {
     if (editing) return
@@ -186,6 +191,11 @@ export default function SummaryForm({ categories }: Props) {
             </MenuItem>
           ))}
         </TextField>
+        <Button type="button" disabled={!categoriesReady} onClick={() => setCategoriesOpen(true)}>Gestionar categorías</Button>
+        <CategoriesDialog open={categoriesOpen} categories={categories} onCreate={onCreateCategory}
+          onDelete={onDeleteCategory} onClose={() => setCategoriesOpen(false)}
+          onCreated={(category) => setCategoryId(category.id)}
+          onDeleted={(id) => { if (categoryId === id) setCategoryId('') }} />
         <CoverField
           title={title}
           seed={id ?? 'nuevo'}

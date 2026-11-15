@@ -9,6 +9,7 @@ import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
 import { PurgeService } from '../src/summaries/purge.service';
 import { FakeStorage, fixture } from './fake-storage';
+import { sharedCategory } from './shared-category';
 
 const USER_B = '00000000-0000-4000-8000-0000000000b2';
 
@@ -68,11 +69,7 @@ describe('Summaries (e2e)', () => {
 
     prisma = new PrismaClient();
     await prisma.user.upsert({ where: { id: USER_B }, update: {}, create: { id: USER_B, name: 'Usuario B' } });
-    const category = await prisma.category.upsert({
-      where: { name: 'Prueba' },
-      update: {},
-      create: { name: 'Prueba' },
-    });
+    const category = await sharedCategory(prisma, 'Prueba');
     categoryId = category.id;
   });
 
@@ -83,12 +80,14 @@ describe('Summaries (e2e)', () => {
     storage.failAllDeletes = false;
     // Cada prueba parte de cero: la base persiste entre ejecuciones y las etiquetas no dependen de un audio.
     await prisma.summary.deleteMany();
+    await prisma.category.deleteMany({ where: { userId: { not: null } } });
     await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
   });
 
   afterAll(async () => {
     await prisma.summary.deleteMany();
+    await prisma.category.deleteMany({ where: { userId: { not: null } } });
     await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
     await prisma.$disconnect();
@@ -97,6 +96,76 @@ describe('Summaries (e2e)', () => {
 
   it('requiere un usuario resuelto (401 sin sesión)', async () => {
     await request(app.getHttpServer()).get('/api/summaries').set(as(undefined)).expect(401);
+  });
+
+  describe('categorías privadas', () => {
+    const api = () => request(app.getHttpServer());
+    const createCategory = (userId: string, name: string) =>
+      api().post('/api/categories').set(as(userId)).send({ name });
+
+    it('mantiene las categorías propias aisladas y evita duplicados visibles', async () => {
+      await api().get('/api/categories').set(as(undefined)).expect(401);
+      await createCategory(DEFAULT_USER_ID, '   ').expect(400);
+      await createCategory(DEFAULT_USER_ID, 'prueba').expect(409);
+      const a = await createCategory(DEFAULT_USER_ID, '  Ciencia   ficción  ').expect(201);
+      expect(a.body).toMatchObject({ name: 'Ciencia ficción', isCustom: true });
+      await createCategory(DEFAULT_USER_ID, 'CIENCIA FICCION').expect(409);
+      const b = await createCategory(USER_B, 'Ciencia ficción').expect(201);
+      expect(b.body.id).not.toBe(a.body.id);
+      const listA = (await api().get('/api/categories').set(as(DEFAULT_USER_ID)).expect(200)).body;
+      const listB = (await api().get('/api/categories').set(as(USER_B)).expect(200)).body;
+      expect(listA).toEqual(expect.arrayContaining([{ id: categoryId, name: 'Prueba', isCustom: false }, a.body]));
+      expect(listA).not.toEqual(expect.arrayContaining([b.body]));
+      expect(listB).toEqual(expect.arrayContaining([b.body]));
+      expect(listB).not.toEqual(expect.arrayContaining([a.body]));
+      await api().delete(`/api/categories/${a.body.id}`).set(as(USER_B)).expect(404);
+      await api().delete(`/api/categories/${categoryId}`).set(as(DEFAULT_USER_ID)).expect(404);
+      await createSummary(USER_B, { categoryId: a.body.id }).then((res) => expect(res.status).toBe(400));
+      const summary = await createReady(USER_B);
+      await api().patch(`/api/summaries/${summary.id}`).set(as(USER_B)).send({ categoryId: a.body.id }).expect(400);
+      await api().delete(`/api/categories/${a.body.id}`).set(as(DEFAULT_USER_ID)).expect(204);
+    });
+
+    it('bloquea la eliminación mientras haya un audio pendiente, activo o en la papelera', async () => {
+      const category = (await createCategory(DEFAULT_USER_ID, 'Categoría propia').expect(201)).body;
+      const pending = await createSummary(DEFAULT_USER_ID, { categoryId: category.id });
+      expect(pending.status).toBe(201);
+      await api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)).expect(409);
+      storage.objects.set(pending.body.summary.s3Key, fixture('sample.mp3'));
+      await api().post(`/api/summaries/${pending.body.summary.id}/complete`).set(as(DEFAULT_USER_ID)).expect(200);
+      await api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)).expect(409);
+      await api().delete(`/api/summaries/${pending.body.summary.id}`).set(as(DEFAULT_USER_ID)).expect(204);
+      await api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)).expect(409);
+      await api().delete(`/api/trash/${pending.body.summary.id}`).set(as(DEFAULT_USER_ID)).expect(204);
+      await api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)).expect(204);
+    });
+
+    it('serializa la asignación y el borrado simultáneos', async () => {
+      const category = (await createCategory(DEFAULT_USER_ID, 'Concurrencia').expect(201)).body;
+      const [created, removed] = await Promise.all([
+        createSummary(DEFAULT_USER_ID, { categoryId: category.id }),
+        api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)),
+      ]);
+      expect([[201, 409], [400, 204]]).toContainEqual([created.status, removed.status]);
+    });
+
+    it('serializa las creaciones con el mismo nombre', async () => {
+      const results = await Promise.all([
+        createCategory(DEFAULT_USER_ID, 'Novedades'),
+        createCategory(DEFAULT_USER_ID, 'NOVEDADES'),
+      ]);
+      expect(results.map((res) => res.status).sort()).toEqual([201, 409]);
+    });
+
+    it('serializa la reasignación y el borrado simultáneos', async () => {
+      const category = (await createCategory(DEFAULT_USER_ID, 'Para reasignar').expect(201)).body;
+      const summary = await createReady(DEFAULT_USER_ID);
+      const [updated, removed] = await Promise.all([
+        api().patch(`/api/summaries/${summary.id}`).set(as(DEFAULT_USER_ID)).send({ categoryId: category.id }),
+        api().delete(`/api/categories/${category.id}`).set(as(DEFAULT_USER_ID)),
+      ]);
+      expect([[200, 409], [400, 204]]).toContainEqual([updated.status, removed.status]);
+    });
   });
 
   it('crea el resumen con la clave de S3 prefijada por usuario', async () => {
@@ -529,8 +598,8 @@ describe('Summaries (e2e)', () => {
     });
 
     it('categorías: solo las que tienen audios, con su conteo', async () => {
-      const other = await prisma.category.upsert({ where: { name: 'Otra' }, update: {}, create: { name: 'Otra' } });
-      await prisma.category.upsert({ where: { name: 'Vacía' }, update: {}, create: { name: 'Vacía' } });
+      const other = await sharedCategory(prisma, 'Otra');
+      await sharedCategory(prisma, 'Vacía');
       await insertReady('A');
       await insertReady('B');
       await insertReady('C', { categoryId: other.id });

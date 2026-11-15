@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { sharedCategory } from './shared-category';
 import { configureApp } from '../src/app.setup';
 import { StorageService } from '../src/storage/storage.service';
 import { FakeStorage, fixture } from './fake-storage';
@@ -126,7 +127,7 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = new PrismaClient();
-    categoryId = (await prisma.category.upsert({ where: { name: 'Prueba' }, update: {}, create: { name: 'Prueba' } })).id;
+    categoryId = (await sharedCategory(prisma, 'Prueba')).id;
   });
 
   beforeEach(async () => {

@@ -17,7 +17,7 @@ const CATEGORIES = [
 
 async function main() {
   for (const name of CATEGORIES) {
-    await prisma.category.upsert({ where: { name }, update: {}, create: { name } });
+    await prisma.category.upsert({ where: { sharedName: name }, update: {}, create: { name, sharedName: name } });
   }
 }
 
