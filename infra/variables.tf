@@ -89,6 +89,30 @@ variable "s3_bucket_name" {
   default     = "resumen-book-reader"
 }
 
+variable "noncurrent_version_days" {
+  description = "Días que se conservan las versiones anteriores (o borradas) de un audio en S3 antes de eliminarlas definitivamente."
+  type        = number
+  default     = 14
+}
+
+variable "alert_email" {
+  description = "Correo que recibe las alarmas y los avisos de gasto. Vacío = no se crean alarmas ni presupuesto."
+  type        = string
+  default     = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Gasto mensual (USD) de la cuenta AWS a partir del cual se avisa (80 % real y 100 % previsto)."
+  type        = number
+  default     = 25
+}
+
+variable "app_domain" {
+  description = "Dominio público de la app para el chequeo externo de disponibilidad (vacío = sin chequeo)."
+  type        = string
+  default     = ""
+}
+
 variable "db_instance_class" {
   type    = string
   default = "db.t4g.micro"

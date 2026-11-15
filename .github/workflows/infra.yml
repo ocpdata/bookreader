@@ -41,6 +41,9 @@ jobs:
       TF_VAR_db_name: ${{ vars.DB_NAME }}
       TF_VAR_db_username: ${{ secrets.DB_USER }}
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+      TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '25' }}
+      TF_VAR_app_domain: ${{ vars.APP_DOMAIN }}
       PRIVATE_SUBNET_1_CIDR: ${{ vars.PRIVATE_SUBNET_1_CIDR }}
       PRIVATE_SUBNET_2_CIDR: ${{ vars.PRIVATE_SUBNET_2_CIDR }}
       SSH_KEY_PEM: ${{ secrets.SSH_KEY_PEM }}
