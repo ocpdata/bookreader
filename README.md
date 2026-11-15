@@ -80,6 +80,8 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 
 `/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. `/papelera` lista lo eliminado. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
 
+En la biblioteca se puede elegir entre lista y cuadrícula; la preferencia se guarda en el navegador. Los filtros activos se pueden quitar individualmente y las acciones de edición, movimiento y eliminación están en el menú de cada audio.
+
 Las categorías predeterminadas son compartidas. Cada usuario puede crear categorías privadas desde la biblioteca o el formulario de audio y eliminar las suyas si no tienen audios asociados, incluidos los pendientes y los de la papelera. Los nombres se comparan sin distinguir mayúsculas ni acentos; no se permiten duplicados frente a las categorías visibles del usuario.
 
 ## Papelera y limpieza

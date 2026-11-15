@@ -76,11 +76,13 @@ export default function HomeView() {
   }
 
   return (
-    <Stack spacing={3}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h5" component="h1">
-          Inicio
-        </Typography>
+    <Stack spacing={4}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+        <Box>
+          <Typography variant="overline" sx={{ color: 'primary.dark', fontWeight: 700, letterSpacing: '0.12em' }}>Tu espacio de escucha</Typography>
+          <Typography variant="h5" component="h1">Inicio</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Buenas ideas, siempre a tu alcance.</Typography>
+        </Box>
         <Button variant="contained" onClick={() => navigate('/audios/nuevo')}>
           + Agregar resumen
         </Button>
@@ -111,11 +113,12 @@ export default function HomeView() {
 
           {data.continueListening.length > 0 && (
             <Section title="Continuar escuchando">
-              <Box sx={GRID_SX}>
-                {data.continueListening.map((s) => (
+              <SummaryCard summary={data.continueListening[0]} compact featured onToggleFavorite={toggleFavorite} />
+              {data.continueListening.length > 1 && <Box sx={GRID_SX}>
+                {data.continueListening.slice(1).map((s) => (
                   <SummaryCard key={s.id} summary={s} compact onToggleFavorite={toggleFavorite} />
                 ))}
-              </Box>
+              </Box>}
             </Section>
           )}
 

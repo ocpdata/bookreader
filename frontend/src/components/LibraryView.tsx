@@ -4,6 +4,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
@@ -11,6 +12,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import {
   createFolder,
@@ -44,6 +46,8 @@ const STATUSES: { value: StatusFilter | ''; label: string }[] = [
   { value: 'unfinished', label: 'Pendientes' },
   { value: 'finished', label: 'Terminados' },
 ]
+
+const VIEW_KEY = 'bookreader.libraryView'
 
 interface Props {
   categories: SelectableCategory[]
@@ -83,6 +87,11 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
   const [toMove, setToMove] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
   const [categoriesOpen, setCategoriesOpen] = useState(false)
+  const [view, setView] = useState<'list' | 'grid'>(() => localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'list')
+
+  useEffect(() => {
+    localStorage.setItem(VIEW_KEY, view)
+  }, [view])
 
   const updateParams = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params)
@@ -149,7 +158,7 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, categoryId, tag, favorite, status, sort, folderParam, reloadKey])
+  }, [debouncedSearch, categoryId, tag, favorite, status, sort, folderParam, reloadKey, hasFilters])
 
   async function toggleFavorite(summary: Summary) {
     const value = !summary.favorite
@@ -250,11 +259,15 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
     : ''
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2.5}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-        <Typography variant="h5" component="h1">
-          {browsing && current ? current.name : 'Mi biblioteca'}
-        </Typography>
+        <Box>
+          <Typography variant="overline" sx={{ color: 'primary.dark', fontWeight: 700, letterSpacing: '0.12em' }}>Tu espacio de escucha</Typography>
+          <Typography variant="h5" component="h1">
+            {browsing && current ? current.name : 'Mi biblioteca'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Tus libros e ideas, en un solo lugar.</Typography>
+        </Box>
         <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Button disabled={!categoriesReady} onClick={() => setCategoriesOpen(true)}>Categorías</Button>
           <Button onClick={() => setFolderDialog({ folder: null })}>+ Nueva carpeta</Button>
@@ -364,6 +377,17 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
             </MenuItem>
           ))}
         </TextField>
+        <ToggleButtonGroup
+          value={view}
+          exclusive
+          size="small"
+          aria-label="Vista de la biblioteca"
+          onChange={(_, next: 'list' | 'grid' | null) => { if (next) setView(next) }}
+          sx={{ ml: { md: 'auto' }, bgcolor: 'background.paper' }}
+        >
+          <ToggleButton value="list" aria-label="Vista de lista">☰ Lista</ToggleButton>
+          <ToggleButton value="grid" aria-label="Vista de cuadrícula">▦ Cuadrícula</ToggleButton>
+        </ToggleButtonGroup>
         {hasFilters && (
           <Button
             size="small"
@@ -379,6 +403,16 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
           </Button>
         )}
       </Stack>
+      {hasFilters && (
+        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'center' }} aria-label="Filtros activos">
+          <Typography variant="body2" color="text.secondary">Filtros:</Typography>
+          {debouncedSearch && <Chip size="small" aria-label={`Quitar filtro de búsqueda: ${debouncedSearch}`} label={`Búsqueda: ${debouncedSearch}`} onDelete={() => { setSearch(''); updateParams({ q: '' }) }} />}
+          {favorite && <Chip size="small" aria-label="Quitar filtro de favoritos" label="Favoritos" onDelete={() => updateParams({ favoritos: '' })} />}
+          {categoryId && <Chip size="small" aria-label="Quitar filtro de categoría" label={`Categoría: ${categories.find((c) => c.id === categoryId)?.name ?? 'seleccionada'}`} onDelete={() => updateParams({ categoria: '' })} />}
+          {tag && <Chip size="small" aria-label={`Quitar filtro de etiqueta: ${tag}`} label={`Etiqueta: ${tag}`} onDelete={() => updateParams({ etiqueta: '' })} />}
+          {status && <Chip size="small" aria-label="Quitar filtro de estado" label={`Estado: ${STATUSES.find((s) => s.value === status)?.label ?? status}`} onDelete={() => updateParams({ estado: '' })} />}
+        </Stack>
+      )}
 
       {error && <Alert severity="error">{error}</Alert>}
       {loading && (
@@ -409,19 +443,23 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
         </Typography>
       )}
 
-      {summaries.map((s) => (
-        <SummaryCard
-          key={s.id}
-          summary={s}
-          activeTag={tag}
-          onToggleFavorite={toggleFavorite}
-          onTagClick={(name) => updateParams({ etiqueta: name })}
-          onDelete={setToDelete}
-          onMove={setToMove}
-          folderPath={hasFilters && s.folderId ? pathLabel(folders, s.folderId) : undefined}
-          onFolderClick={(summary) => openFolder(summary.folderId ?? '')}
-        />
-      ))}
+      <Box sx={{ display: view === 'grid' ? 'grid' : 'flex', flexDirection: 'column',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: 2 }}>
+        {summaries.map((s) => (
+          <SummaryCard
+            key={s.id}
+            summary={s}
+            grid={view === 'grid'}
+            activeTag={tag}
+            onToggleFavorite={toggleFavorite}
+            onTagClick={(name) => updateParams({ etiqueta: name })}
+            onDelete={setToDelete}
+            onMove={setToMove}
+            folderPath={hasFilters && s.folderId ? pathLabel(folders, s.folderId) : undefined}
+            onFolderClick={(summary) => openFolder(summary.folderId ?? '')}
+          />
+        ))}
+      </Box>
 
       <ConfirmDialog
         open={toDelete !== null}

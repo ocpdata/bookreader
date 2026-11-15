@@ -6,6 +6,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
+import Stack from '@mui/material/Stack'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import { createCategory, deleteCategory, listCategories, type CurrentUser } from './api'
@@ -25,7 +26,11 @@ import TrashView from './components/TrashView'
 import VerifyEmailView from './components/VerifyEmailView'
 import type { SelectableCategory } from './types'
 
-const navSx = { '&.active': { textDecoration: 'underline' } }
+const navSx = {
+  color: 'text.secondary',
+  whiteSpace: 'nowrap',
+  '&.active': { color: 'primary.dark', bgcolor: '#E6F3F3', fontWeight: 700 },
+}
 
 /** Sin sesión lleva al acceso y, tras entrar, vuelve a la página que se pidió. */
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -84,34 +89,35 @@ export default function App() {
 
   return (
     <>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component={RouterLink} to="/" sx={{ color: 'inherit', textDecoration: 'none' }}>
-            📚 BookReader
-          </Typography>
+      <AppBar position="static" color="inherit" elevation={0} sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
+        <Toolbar sx={{ maxWidth: 1320, width: '100%', mx: 'auto', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap', py: { xs: 1, md: 1.5 } }}>
+          <Stack component={RouterLink} to="/" direction="row" spacing={1.2}
+            sx={{ alignItems: 'center', color: 'text.primary', textDecoration: 'none', flexShrink: 0 }}>
+            <Box aria-hidden="true" sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: 'primary.main', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13 }}>
+              BR
+            </Box>
+            <Typography variant="h6">BookReader</Typography>
+          </Stack>
           {user && (
             <>
-              <Button color="inherit" component={NavLink} to="/" end sx={{ ml: 3, ...navSx }}>
-                Inicio
-              </Button>
-              <Button color="inherit" component={NavLink} to="/biblioteca" sx={navSx}>
-                Biblioteca
-              </Button>
-              <Button color="inherit" component={NavLink} to="/papelera" sx={navSx}>
-                Papelera
-              </Button>
               <Box sx={{ flexGrow: 1 }} />
-              <Button color="inherit" component={NavLink} to="/cuenta" sx={navSx}>
-                {user.name}
-              </Button>
-              <Button color="inherit" onClick={handleLogout}>
-                Salir
-              </Button>
+              <Stack component="nav" aria-label="Navegación principal" direction="row" spacing={0.5}
+                sx={{ order: { xs: 3, md: 0 }, flexBasis: { xs: '100%', md: 'auto' }, overflowX: 'auto' }}>
+                <Button component={NavLink} to="/" end sx={navSx}>Inicio</Button>
+                <Button component={NavLink} to="/biblioteca" sx={navSx}>Biblioteca</Button>
+                <Button component={NavLink} to="/papelera" sx={navSx}>Papelera</Button>
+              </Stack>
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+                <Button component={NavLink} to="/cuenta" sx={{ ...navSx, maxWidth: { xs: 140, sm: 220 }, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user.name}
+                </Button>
+                <Button color="inherit" onClick={handleLogout}>Salir</Button>
+              </Stack>
             </>
           )}
         </Toolbar>
       </AppBar>
-      <Container maxWidth="md" sx={{ py: 3 }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
         <TermsGate />
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
