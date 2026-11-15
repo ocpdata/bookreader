@@ -11,6 +11,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { parseStream } from 'music-metadata';
 import { Readable } from 'node:stream';
+import { fragmentedMp4Duration } from './fragmented-mp4';
 
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const PLAYBACK_TTL_SECONDS = 60 * 60;
@@ -94,7 +95,8 @@ export class StorageService {
       });
       body = object.Body as Readable;
       const metadata = await parseStream(body, { mimeType: contentType, size: sizeBytes }, { duration: true });
-      const duration = metadata.format.duration;
+      let duration = metadata.format.duration;
+      if (!duration && contentType === 'audio/mp4') duration = (await this.fragmentedDuration(key, abort.signal)) ?? undefined;
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
         throw new Error('No se pudo determinar la duración del audio');
       }
@@ -103,6 +105,17 @@ export class StorageService {
     } finally {
       clearTimeout(timer);
       body?.destroy();
+    }
+  }
+
+  /** MP4 fragmentado (DASH): la cabecera declara duración 0, así que se suma la de los fragmentos. */
+  private async fragmentedDuration(key: string, signal: AbortSignal): Promise<number | null> {
+    const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: signal });
+    const body = object.Body as Readable;
+    try {
+      return await fragmentedMp4Duration(body);
+    } finally {
+      body.destroy();
     }
   }
 
