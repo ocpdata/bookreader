@@ -1,68 +1,16 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { PassThrough } from 'node:stream';
 import sharp = require('sharp');
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
 import { PurgeService } from '../src/summaries/purge.service';
+import { FakeStorage, fixture } from './fake-storage';
 
 const USER_B = '00000000-0000-4000-8000-0000000000b2';
-const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name));
-
-/** S3 simulado: los "objetos" subidos viven en memoria; la duración se lee con el parser real. */
-class FakeStorage {
-  objects = new Map<string, Buffer>();
-  /** Claves que S3 "borró" y claves cuyo borrado debe fallar (para probar los reintentos). */
-  deleted: string[] = [];
-  failKeys = new Set<string>();
-  failAllDeletes = false;
-  deleteObject = async (key: string) => {
-    if (this.failAllDeletes || this.failKeys.has(key)) throw new Error('S3 no disponible');
-    // Se ejecuta la validación real de claves del servicio con un cliente S3 simulado.
-    const real = Object.create(StorageService.prototype) as StorageService;
-    (real as any).bucket = 'x';
-    (real as any).s3 = {
-      send: async (command: any) => {
-        this.deleted.push(command.input.Key);
-        this.objects.delete(command.input.Key);
-      },
-    };
-    await real.deleteObject(key);
-  };
-  createUploadUrl = async (key: string) => `https://s3.test/upload/${key}`;
-  createPlaybackUrl = async (key: string) => `https://s3.test/play/${key}`;
-  getObjectSize = async (key: string) => this.objects.get(key)?.length ?? null;
-  putObject = async (key: string, body: Buffer) => {
-    this.objects.set(key, body);
-  };
-  getObjectStream = async (key: string) => {
-    const body = this.objects.get(key);
-    if (!body) throw new Error('NoSuchKey');
-    const stream = new PassThrough();
-    stream.end(body);
-    return stream;
-  };
-  getAudioDurationSeconds = async (key: string, contentType: string, size: number) =>
-    (await this.getAudioInfo(key, contentType, size)).durationSeconds;
-  getAudioInfo = async (key: string, contentType: string, size: number) => {
-    const real = Object.create(StorageService.prototype) as StorageService;
-    (real as any).bucket = 'x';
-    // El cuerpo real de S3 es un stream de bytes (no de objetos, como Readable.from).
-    (real as any).s3 = {
-      send: async () => {
-        const body = new PassThrough();
-        body.end(this.objects.get(key));
-        return { Body: body };
-      },
-    };
-    return real.getAudioInfo(key, contentType, size);
-  };
-}
 
 describe('Summaries (e2e)', () => {
   let app: INestApplication;
@@ -115,8 +63,7 @@ describe('Summaries (e2e)', () => {
       .compile();
     purge = module.get(PurgeService);
     app = module.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    configureApp(app);
     await app.init();
 
     prisma = new PrismaClient();

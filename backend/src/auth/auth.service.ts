@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, UnauthorizedException } from '
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginRateLimiter } from './login-rate-limiter';
+import { ApiTokenService } from './api-token.service';
 import { PasswordService } from './password.service';
 import { SessionService } from './session.service';
 
@@ -16,9 +17,11 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly sessions: SessionService,
     private readonly limiter: LoginRateLimiter,
+    private readonly apiTokens: ApiTokenService,
   ) {}
 
-  async login(rawEmail: string, password: string, ip: string, userAgent?: string) {
+  /** Comprueba correo y contraseña con límite de intentos y error genérico; no crea ninguna sesión. */
+  async verifyCredentials(rawEmail: string, password: string, ip: string) {
     const email = normalizeEmail(rawEmail);
     if (this.limiter.isBlocked(ip, email)) {
       throw new HttpException('Demasiados intentos. Inténtalo de nuevo en unos minutos.', HttpStatus.TOO_MANY_REQUESTS);
@@ -34,9 +37,20 @@ export class AuthService {
     }
 
     this.limiter.reset(ip, email);
-    const session = await this.sessions.create(user.id, userAgent);
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    return user;
+  }
+
+  async login(rawEmail: string, password: string, ip: string, userAgent?: string) {
+    const user = await this.verifyCredentials(rawEmail, password, ip);
+    const session = await this.sessions.create(user.id, userAgent);
     return { session, user: { id: user.id, name: user.name, email: user.email } };
+  }
+
+  /** Login de una app compatible: devuelve un token de dispositivo en vez de abrir una sesión web. */
+  async loginDevice(rawEmail: string, password: string, ip: string, deviceName: string) {
+    const user = await this.verifyCredentials(rawEmail, password, ip);
+    return { token: await this.apiTokens.create(user.id, deviceName), user };
   }
 
   async me(userId: string) {
@@ -54,5 +68,7 @@ export class AuthService {
     this.passwords.assertAcceptable(next);
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await this.passwords.hash(next) } });
     await this.sessions.destroyOthers(userId, sessionToken);
+    // Los dispositivos vinculados también deben volver a iniciar sesión con la contraseña nueva.
+    await this.apiTokens.revokeAll(userId);
   }
 }

@@ -22,6 +22,15 @@ const AUDIO_PARSE_TIMEOUT_MS = 45_000;
  */
 const DELETABLE_KEY = /^audios\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?\/(audio\.(mp3|m4a)|cover-[0-9a-f]{8}\.jpg)$/;
 
+export interface ObjectRange {
+  body: Readable;
+  partial: boolean;
+  contentLength?: number;
+  contentRange?: string;
+  etag?: string;
+  lastModified?: Date;
+}
+
 export interface AudioInfo {
   durationSeconds: number;
   /** Portada incrustada en las etiquetas del archivo, sin procesar. */
@@ -94,6 +103,22 @@ export class StorageService {
       clearTimeout(timer);
       body?.destroy();
     }
+  }
+
+  /**
+   * Objeto (o un rango de bytes) como stream, para servir el audio con soporte de `Range`.
+   * `range` ya debe estar validado (un solo rango `bytes=a-b`).
+   */
+  async getObjectRange(key: string, range?: string): Promise<ObjectRange> {
+    const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key, Range: range }));
+    return {
+      body: object.Body as Readable,
+      partial: object.$metadata.httpStatusCode === 206,
+      contentLength: object.ContentLength,
+      contentRange: object.ContentRange,
+      etag: object.ETag,
+      lastModified: object.LastModified,
+    };
   }
 
   putObject(key: string, body: Buffer, contentType: string) {

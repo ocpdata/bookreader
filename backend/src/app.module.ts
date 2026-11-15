@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AbsCompatModule } from './abs/abs.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
@@ -19,6 +20,7 @@ import { HealthController } from './health/health.controller';
     FoldersModule,
     CategoriesModule,
     SummariesModule,
+    ...(process.env.ABS_COMPAT_ENABLED === 'false' ? [] : [AbsCompatModule]),
   ],
   controllers: [HealthController],
 })

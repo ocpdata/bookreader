@@ -32,7 +32,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
       </Box>
     )
   }
-  if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
+  if (!user) return <Navigate to="/entrar" replace state={{ from: `${location.pathname}${location.search}` }} />
   return <>{children}</>
 }
 
@@ -52,7 +52,7 @@ export default function App() {
 
   async function handleLogout() {
     await logout()
-    navigate('/login', { replace: true })
+    navigate('/entrar', { replace: true })
   }
 
   return (
@@ -91,7 +91,7 @@ export default function App() {
           </Alert>
         )}
         <Routes>
-          <Route path="/login" element={<LoginView />} />
+          <Route path="/entrar" element={<LoginView />} />
           <Route path="/" element={<RequireAuth><HomeView /></RequireAuth>} />
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />

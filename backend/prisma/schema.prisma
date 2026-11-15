@@ -29,6 +29,8 @@ model User {
   favorites    Favorite[]
   sessions     Session[]
   folders      Folder[]
+  apiTokens    ApiToken[]
+  playSessions PlaySession[]
 
   @@map("users")
 }
@@ -50,6 +52,7 @@ model Summary {
   progress         PlaybackProgress[]
   tags             SummaryTag[]
   favorites        Favorite[]
+  playSessions     PlaySession[]
   title            String             @db.VarChar(200)
   author           String             @db.VarChar(200)
   summaryTitle     String?            @map("summary_title") @db.VarChar(200)
@@ -84,13 +87,16 @@ model Summary {
 // Posición de escucha de cada usuario en cada audio. "completed" es persistente: solo cambia al
 // llegar al ~95 %, de forma explícita o al reiniciar (se borra la fila).
 model PlaybackProgress {
-  userId          String   @map("user_id") @db.VarChar(36)
-  summaryId       String   @map("summary_id") @db.VarChar(36)
-  positionSeconds Int      @default(0) @map("position_seconds")
-  completed       Boolean  @default(false)
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  summary         Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  userId           String   @map("user_id") @db.VarChar(36)
+  summaryId        String   @map("summary_id") @db.VarChar(36)
+  positionSeconds  Int      @default(0) @map("position_seconds")
+  completed        Boolean  @default(false)
+  // Oculto de "continuar escuchando" (apps de Audiobookshelf); se vuelve a mostrar al avanzar.
+  hideFromContinue Boolean  @default(false) @map("hide_from_continue")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary          Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
 
   @@id([userId, summaryId])
   @@index([userId, updatedAt])
@@ -169,4 +175,35 @@ model Folder {
   @@unique([userId, parentId, name])
   @@index([parentId])
   @@map("folders")
+}
+
+// Token de un dispositivo (apps compatibles con Audiobookshelf). Solo se guarda el hash; se puede revocar.
+model ApiToken {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  userId     String    @map("user_id") @db.VarChar(36)
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  name       String    @db.VarChar(100)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_tokens")
+}
+
+// Sesión de reproducción de una app compatible: su id (aleatorio) autoriza la URL pública del audio.
+model PlaySession {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  userId     String   @map("user_id") @db.VarChar(36)
+  summaryId  String   @map("summary_id") @db.VarChar(36)
+  deviceName String?  @map("device_name") @db.VarChar(100)
+  startTime  Int      @default(0) @map("start_time")
+  createdAt  DateTime @default(now()) @map("created_at")
+  expiresAt  DateTime @map("expires_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary    Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("play_sessions")
 }

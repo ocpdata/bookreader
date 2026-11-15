@@ -1,10 +1,11 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { spawnSync } from 'node:child_process';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
 import { SessionService } from '../src/auth/session.service';
 import { DEFAULT_USER_ID } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
@@ -44,8 +45,7 @@ describe('Autenticación (e2e)', () => {
       .useValue({})
       .compile();
     app = module.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    configureApp(app);
     await app.init();
     sessions = module.get(SessionService);
     prisma = new PrismaClient();

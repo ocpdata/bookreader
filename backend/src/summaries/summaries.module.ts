@@ -8,5 +8,6 @@ import { TrashController } from './trash.controller';
 @Module({
   controllers: [SummariesController, HomeController, TrashController],
   providers: [SummariesService, PurgeService],
+  exports: [SummariesService],
 })
 export class SummariesModule {}

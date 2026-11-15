@@ -16,9 +16,27 @@ cert_dir="/etc/letsencrypt/live/${domain}"
 
 render_nginx() {
   local with_tls="$1"
+  # Cabeceras comunes de los proxies hacia la API (Host se conserva: el control de origen lo necesita).
+  local proxy_common
+  proxy_common='proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;'
   cat <<EOF
 # Gestionado por scripts/setup_https.sh. El puerto 80 no sirve la aplicación: solo la
 # validación de Let's Encrypt y la redirección a HTTPS (host fijo, no el de la petición).
+
+# Límite de intentos de acceso (la API aplica además el suyo por cuenta). Rutas de las apps y de la web.
+limit_req_zone \$binary_remote_addr zone=bookreader_login:10m rate=10r/m;
+
+# El registro de accesos no debe guardar secretos: se usa \$uri (sin query: no queda ?token=) y los ids
+# de sesión de reproducción de /public/session/ se ocultan.
+map \$uri \$bookreader_logged_uri {
+    ~^/public/session/    /public/session/[oculto];
+    default               \$uri;
+}
+log_format bookreader '\$remote_addr [\$time_local] "\$request_method \$bookreader_logged_uri" \$status \$body_bytes_sent "\$http_user_agent"';
+
 server {
     listen 80 default_server;
     server_name _;
@@ -49,11 +67,44 @@ server {
     root ${app_root};
     index index.html;
 
+    access_log /var/log/nginx/bookreader.access.log bookreader;
+
     location /api/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        client_max_body_size 2m;
+        ${proxy_common}
+    }
+
+    location = /api/auth/login {
+        limit_req zone=bookreader_login burst=5 nodelay;
+        ${proxy_common}
+    }
+
+    # Rutas de las apps compatibles con Audiobookshelf (viven en la raíz, fuera de /api).
+    location = /ping {
+        ${proxy_common}
+    }
+
+    location = /status {
+        ${proxy_common}
+    }
+
+    # La pantalla web de acceso está en /entrar; /login es el acceso de las apps (POST) y redirige si se abre en un navegador.
+    location = /login {
+        limit_req zone=bookreader_login burst=5 nodelay;
+        ${proxy_common}
+    }
+
+    location = /logout {
+        ${proxy_common}
+    }
+
+    # Audio de las sesiones de reproducción: se transmite sin almacenar en búfer y con lecturas largas.
+    location /public/session/ {
+        ${proxy_common}
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 
     # Archivos con hash en el nombre (Vite): nunca cambian, se cachean por mucho tiempo.

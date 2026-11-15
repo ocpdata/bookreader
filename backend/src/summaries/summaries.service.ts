@@ -129,7 +129,7 @@ export class SummariesService {
     const [continueRows, recent, favoriteRows, byCategory, total] = await Promise.all([
       // Audios empezados y no terminados, el último escuchado primero.
       this.prisma.playbackProgress.findMany({
-        where: { userId, completed: false, positionSeconds: { gt: 0 }, summary: ready },
+        where: { userId, completed: false, hideFromContinue: false, positionSeconds: { gt: 0 }, summary: ready },
         orderBy: { updatedAt: 'desc' },
         take: HOME_CONTINUE_LIMIT,
         include: { summary: { include: withRelations(userId) } },
@@ -391,7 +391,8 @@ export class SummariesService {
     const completed = dto.completed ?? (reachedEnd || (existing?.completed ?? false));
 
     const where = { userId_summaryId: { userId, summaryId: id } };
-    const data = { positionSeconds, completed };
+    // Avanzar la posición devuelve el audio a "continuar escuchando" si se había ocultado desde una app.
+    const data = { positionSeconds, completed, ...(dto.positionSeconds !== undefined ? { hideFromContinue: false } : {}) };
     let row;
     try {
       row = await this.prisma.playbackProgress.upsert({ where, update: data, create: { userId, summaryId: id, ...data } });
