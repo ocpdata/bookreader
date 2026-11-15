@@ -5,13 +5,19 @@ variable "aws_region" {
 }
 
 variable "allowed_cidr_blocks" {
-  description = "IPs (CIDR) con acceso a SSH y HTTPS de la VM. Usa tu IP /32 hasta que exista el login."
+  description = "IPs (CIDR) con acceso a SSH de la VM (nunca 0.0.0.0/0). Los despliegues abren el 22 temporalmente solo para el runner."
   type        = list(string)
 
   validation {
     condition     = length(var.allowed_cidr_blocks) > 0 && !contains(var.allowed_cidr_blocks, "0.0.0.0/0")
-    error_message = "allowed_cidr_blocks no puede estar vacío ni abrirse a 0.0.0.0/0 mientras la app no tenga login."
+    error_message = "allowed_cidr_blocks (SSH) no puede estar vacío ni abrirse a 0.0.0.0/0."
   }
+}
+
+variable "https_cidr_blocks" {
+  description = "IPs (CIDR) con acceso al puerto 443. Público para las apps y la web fuera de casa; restringe a tu IP si quieres cerrar el acceso."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
 variable "http_cidr_blocks" {

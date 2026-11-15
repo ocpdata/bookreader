@@ -17,14 +17,23 @@ cert_dir="/etc/letsencrypt/live/${domain}"
 render_nginx() {
   local with_tls="$1"
   # Cabeceras comunes de los proxies hacia la API (Host se conserva: el control de origen lo necesita).
-  local proxy_common
+  local proxy_common security_headers
+  # add_header no se hereda en un location que define el suyo: estas cabeceras se repiten en cada uno.
+  security_headers='add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "same-origin" always;'
   proxy_common='proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;'
+        proxy_set_header X-Forwarded-Proto $scheme;
+        '"${security_headers}"
   cat <<EOF
 # Gestionado por scripts/setup_https.sh. El puerto 80 no sirve la aplicación: solo la
 # validación de Let's Encrypt y la redirección a HTTPS (host fijo, no el de la petición).
+
+server_tokens off;
+limit_req_status 429;
 
 # Límite de intentos de acceso (la API aplica además el suyo por cuenta). Rutas de las apps y de la web.
 limit_req_zone \$binary_remote_addr zone=bookreader_login:10m rate=10r/m;
@@ -112,6 +121,7 @@ server {
         try_files \$uri =404;
         # Sin "always": un 404 no debe quedar cacheado como inmutable.
         add_header Cache-Control "public, max-age=31536000, immutable";
+        ${security_headers}
     }
 
     # index.html y el resto de la raíz: el navegador siempre revalida, así un despliegue nuevo
@@ -119,6 +129,7 @@ server {
     location / {
         try_files \$uri /index.html;
         add_header Cache-Control "no-cache" always;
+        ${security_headers}
     }
 }
 EOF

@@ -232,6 +232,40 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
       await api().get('/api/me').set(bearer(other)).expect(401);
     });
 
+    it('lista y revoca los dispositivos vinculados solo desde la sesión web', async () => {
+      const a = await createUser();
+      const b = await createUser();
+      const phone = await tokenFor(a.email);
+      const tablet = await tokenFor(a.email);
+      const others = await tokenFor(b.email);
+      const web = await api().post('/api/auth/login').send({ email: a.email, password: PASSWORD });
+      const cookie = web.headers['set-cookie'];
+
+      const list = await api().get('/api/auth/devices').set('Cookie', cookie);
+      expect(list.status).toBe(200);
+      expect(list.body).toHaveLength(2);
+      expect(Object.keys(list.body[0]).sort()).toEqual(['createdAt', 'id', 'lastUsedAt', 'name']);
+      expect(list.body[0].name).toContain('AudioBooth');
+
+      // Un token de dispositivo no puede gestionar dispositivos.
+      await api().get('/api/auth/devices').set(bearer(phone)).expect(403);
+      await api().get('/api/auth/devices').expect(401);
+
+      const [first] = list.body;
+      await api().delete(`/api/auth/devices/${first.id}`).set('Cookie', cookie).expect(204);
+      await api().delete(`/api/auth/devices/${first.id}`).set('Cookie', cookie).expect(404);
+      const bDevice = (await prisma.apiToken.findFirstOrThrow({ where: { userId: b.id } })).id;
+      await api().delete(`/api/auth/devices/${bDevice}`).set('Cookie', cookie).expect(404);
+      expect((await api().get('/api/me').set(bearer(others))).status).toBe(200);
+      // Se revocó exactamente uno de los dos dispositivos de este usuario.
+      const statuses = await Promise.all([phone, tablet].map(async (t) => (await api().get('/api/me').set(bearer(t))).status));
+      expect(statuses.sort()).toEqual([200, 401]);
+
+      await api().delete('/api/auth/devices').set('Cookie', cookie).expect(204);
+      expect((await api().get('/api/auth/devices').set('Cookie', cookie)).body).toEqual([]);
+      expect((await api().get('/api/me').set(bearer(others))).status).toBe(200);
+    });
+
     it('guarda como máximo 20 tokens por usuario', async () => {
       const user = await createUser();
       for (let i = 0; i < 22; i++) await tokenFor(user.email);

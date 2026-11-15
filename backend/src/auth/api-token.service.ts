@@ -15,7 +15,7 @@ export class ApiTokenService {
   async create(userId: string, name: string) {
     const token = `brt_${randomBytes(32).toString('base64url')}`;
     await this.prisma.apiToken.create({
-      data: { userId, tokenHash: hashApiToken(token), name: name.slice(0, 100) || 'Dispositivo' },
+      data: { userId, tokenHash: hashApiToken(token), name: name.slice(0, 100) || 'Dispositivo', lastUsedAt: new Date() },
     });
     // Tope por usuario: al pasarlo se descartan los más antiguos (un mismo móvil que entra varias veces no acumula).
     const stale = await this.prisma.apiToken.findMany({
@@ -35,6 +35,21 @@ export class ApiTokenService {
       await this.prisma.apiToken.update({ where: { id: row.id }, data: { lastUsedAt: new Date() } });
     }
     return { userId: row.userId };
+  }
+
+  /** Dispositivos vinculados de un usuario (sin el hash: no sirve para nada, pero tampoco se expone). */
+  list(userId: string) {
+    return this.prisma.apiToken.findMany({
+      where: { userId },
+      orderBy: [{ lastUsedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+      select: { id: true, name: true, createdAt: true, lastUsedAt: true },
+    });
+  }
+
+  /** Revoca un dispositivo del usuario; false si no existe o es de otro usuario. */
+  async revokeById(userId: string, id: string) {
+    const { count } = await this.prisma.apiToken.deleteMany({ where: { id, userId } });
+    return count > 0;
   }
 
   revokeAll(userId: string) {

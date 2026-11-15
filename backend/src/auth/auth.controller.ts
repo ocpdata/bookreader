@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ApiTokenService } from './api-token.service';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto, LoginDto } from './auth.dto';
 import { CurrentUser } from './current-user.decorator';
@@ -21,6 +22,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
+    private readonly apiTokens: ApiTokenService,
   ) {}
 
   @Public()
@@ -45,6 +47,24 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() userId: string) {
     return this.auth.me(userId);
+  }
+
+  /** Apps vinculadas (Absorb, AudioBooth...). Solo con la sesión web: un token de dispositivo no puede gestionarlos. */
+  @Get('devices')
+  devices(@CurrentUser() userId: string) {
+    return this.apiTokens.list(userId);
+  }
+
+  @Delete('devices/:id')
+  @HttpCode(204)
+  async revokeDevice(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    if (!(await this.apiTokens.revokeById(userId, id))) throw new NotFoundException('Dispositivo no encontrado');
+  }
+
+  @Delete('devices')
+  @HttpCode(204)
+  async revokeAllDevices(@CurrentUser() userId: string) {
+    await this.apiTokens.revokeAll(userId);
   }
 
   @Post('password')

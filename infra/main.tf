@@ -114,15 +114,16 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "web" {
   name        = "${local.name}-web"
-  description = "SSH, HTTP y HTTPS a la VM de BookReader desde IPs permitidas"
+  description = "SSH desde IPs permitidas; HTTP y HTTPS a la VM de BookReader"
   vpc_id      = aws_vpc.main.id
 
   tags = { Name = "${local.name}-web" }
 }
 
+# SSH: solo desde las IPs permitidas.
 resource "aws_vpc_security_group_ingress_rule" "web" {
   for_each = {
-    for pair in setproduct([22, 443], var.allowed_cidr_blocks) :
+    for pair in setproduct([22], var.allowed_cidr_blocks) :
     "${pair[0]}-${pair[1]}" => { port = pair[0], cidr = pair[1] }
   }
 
@@ -131,6 +132,19 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
   from_port         = each.value.port
   to_port           = each.value.port
   cidr_ipv4         = each.value.cidr
+}
+
+# HTTPS: abierto a Internet para que las apps móviles (Absorb, AudioBooth) y la web funcionen fuera de casa.
+# La aplicación exige sesión o token en todo salvo /api/health, /ping, /status y el audio de sesiones de
+# reproducción (id aleatorio); Nginx limita los intentos de acceso.
+resource "aws_vpc_security_group_ingress_rule" "https" {
+  for_each = toset(var.https_cidr_blocks)
+
+  security_group_id = aws_security_group.web.id
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = each.value
 }
 
 # Puerto 80 abierto a Internet: Let's Encrypt valida desde IP que no publica y la renovación

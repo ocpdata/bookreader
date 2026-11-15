@@ -78,6 +78,19 @@ export const getMe = () => request<CurrentUser>('/auth/me')
 export const changePassword = (current: string, next: string) =>
   request<void>('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
 
+export interface LinkedDevice {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
+export const listDevices = () => request<LinkedDevice[]>('/auth/devices')
+
+export const revokeDevice = (id: string) => request<void>(`/auth/devices/${id}`, { method: 'DELETE' })
+
+export const revokeAllDevices = () => request<void>('/auth/devices', { method: 'DELETE' })
+
 export const listCategories = () => request<Category[]>('/categories')
 
 /** folderId: id de carpeta, "root" para los audios sin carpeta o undefined para toda la biblioteca. */
