@@ -57,6 +57,11 @@ export class SessionService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.session.deleteMany({ where: { userId, tokenHash: { not: hashToken(keepToken) } } });
   }
 
+  /** Cierra todas las sesiones del usuario (por ejemplo, al restablecer la contraseña o suspender la cuenta). */
+  async destroyAll(userId: string) {
+    await this.prisma.session.deleteMany({ where: { userId } });
+  }
+
   async deleteExpired() {
     const { count } = await this.prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     if (count) this.logger.log(`Sesiones caducadas eliminadas: ${count}`);

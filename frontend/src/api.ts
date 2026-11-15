@@ -75,6 +75,33 @@ export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
 export const getMe = () => request<CurrentUser>('/auth/me')
 
+export type RegistrationMode = 'closed' | 'invite' | 'open'
+
+export const getAuthConfig = () => request<{ registration: RegistrationMode }>('/auth/config')
+
+export interface RegisterFields {
+  email: string
+  name: string
+  password: string
+  inviteCode?: string
+  acceptTerms: boolean
+}
+
+export const registerAccount = (fields: RegisterFields) =>
+  request<{ message: string }>('/auth/register', { method: 'POST', body: JSON.stringify(fields) })
+
+export const resendVerification = (email: string) =>
+  request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) })
+
+export const verifyEmail = (token: string) =>
+  request<{ message: string }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) })
+
+export const forgotPassword = (email: string) =>
+  request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
+
+export const resetPassword = (token: string, password: string) =>
+  request<{ message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) })
+
 export const changePassword = (current: string, next: string) =>
   request<void>('/auth/password', { method: 'POST', body: JSON.stringify({ current, next }) })
 

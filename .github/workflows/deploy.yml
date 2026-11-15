@@ -34,6 +34,7 @@ jobs:
       S3_BUCKET: ${{ vars.S3_BUCKET || 'resumen-book-reader' }}
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
       APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      REGISTRATION_MODE: ${{ vars.REGISTRATION_MODE || 'closed' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,6 +125,8 @@ jobs:
             echo "MAIL_FROM=\"BookReader <no-responder@${APP_DOMAIN}>\""
             echo "SES_CONFIGURATION_SET=bookreader-correo"
             echo "APP_PUBLIC_URL=https://${APP_DOMAIN}"
+            # closed | invite | open (variable de GitHub REGISTRATION_MODE; por defecto cerrado).
+            echo "REGISTRATION_MODE=${REGISTRATION_MODE}"
           } > "$RUNNER_TEMP/api.env"
 
       - name: Configure SSH

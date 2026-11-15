@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 /**
- * Administración de usuarios. El registro está cerrado: los usuarios se crean solo con este comando.
+ * Administración de usuarios. Las cuentas también se crean solas con el registro (REGISTRATION_MODE=invite|open);
+ * este comando sirve para el propietario, para casos especiales y para gestionar invitaciones y suspensiones.
  *
  *   node scripts/user-admin.js set-owner <correo> "<nombre>"   Reclama el usuario propietario existente
- *   node scripts/user-admin.js create <correo> "<nombre>"      Crea un usuario nuevo
+ *   node scripts/user-admin.js create <correo> "<nombre>"      Crea un usuario nuevo (ya verificado)
  *   node scripts/user-admin.js set-password <correo>           Cambia la contraseña de un usuario
  *   node scripts/user-admin.js list                            Lista los usuarios
+ *   node scripts/user-admin.js suspend <correo>                Suspende la cuenta y cierra sus sesiones y apps
+ *   node scripts/user-admin.js activate <correo>               Reactiva una cuenta suspendida
+ *   node scripts/user-admin.js invite [--email x] [--uses n] [--days n] [--note "..."]
+ *                                                              Crea un código de invitación (se muestra una sola vez)
+ *   node scripts/user-admin.js invitations                     Lista las invitaciones (sin los códigos)
  *
  * La contraseña se pide por teclado (sin mostrarla); no se admite como argumento para que no quede en
  * el historial. Para automatizar, USER_ADMIN_PASSWORD la toma del entorno.
  * En la VM:  node --env-file=/var/app/bookreader/shared/api.env scripts/user-admin.js ...
  */
 const readline = require('node:readline');
+const { createHash, randomInt } = require('node:crypto');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
@@ -75,7 +82,7 @@ const commands = {
     if (taken && taken.id !== OWNER_ID) throw new Error('Ese correo ya pertenece a otro usuario');
     await prisma.user.update({
       where: { id: OWNER_ID },
-      data: { email, name: name?.trim() || owner.name, passwordHash: await passwordHash() },
+      data: { email, name: name?.trim() || owner.name, passwordHash: await passwordHash(), status: 'ACTIVE', emailVerifiedAt: owner.emailVerifiedAt ?? new Date() },
     });
     console.log(`Propietario listo: ${email} (conserva todos sus audios).`);
   },
@@ -84,7 +91,9 @@ const commands = {
     const email = normalizeEmail(emailArg);
     if (!name?.trim()) throw new Error('Indica el nombre: create <correo> "<nombre>"');
     if (await prisma.user.findUnique({ where: { email } })) throw new Error('Ese correo ya existe');
-    const user = await prisma.user.create({ data: { email, name: name.trim(), passwordHash: await passwordHash() } });
+    const user = await prisma.user.create({
+      data: { email, name: name.trim(), passwordHash: await passwordHash(), status: 'ACTIVE', emailVerifiedAt: new Date() },
+    });
     console.log(`Usuario creado: ${email} (${user.id})`);
   },
 
@@ -93,15 +102,71 @@ const commands = {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) throw new Error('No existe ese usuario');
     await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await passwordHash() } });
-    // Una contraseña nueva invalida las sesiones abiertas.
+    // Una contraseña nueva invalida las sesiones abiertas y las apps vinculadas.
     await prisma.session.deleteMany({ where: { userId: user.id } });
-    console.log(`Contraseña actualizada para ${email}; se cerraron sus sesiones.`);
+    await prisma.apiToken.deleteMany({ where: { userId: user.id } });
+    console.log(`Contraseña actualizada para ${email}; se cerraron sus sesiones y apps.`);
   },
 
   async list() {
     const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } });
     for (const u of users) {
-      console.log(`${u.id}  ${u.email ?? '(sin correo)'}  ${u.name}  contraseña:${u.passwordHash ? 'sí' : 'no'}  último acceso:${u.lastLoginAt?.toISOString() ?? '-'}`);
+      console.log(`${u.id}  ${u.email ?? '(sin correo)'}  ${u.name}  ${u.status}  correo verificado:${u.emailVerifiedAt ? 'sí' : 'no'}  último acceso:${u.lastLoginAt?.toISOString() ?? '-'}`);
+    }
+  },
+
+  async suspend(emailArg) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    if (user.id === OWNER_ID) throw new Error('No se puede suspender al propietario');
+    await prisma.user.update({ where: { id: user.id }, data: { status: 'SUSPENDED' } });
+    const sessions = await prisma.session.deleteMany({ where: { userId: user.id } });
+    const apps = await prisma.apiToken.deleteMany({ where: { userId: user.id } });
+    console.log(`Cuenta suspendida: ${email} (${sessions.count} sesiones y ${apps.count} apps cerradas).`);
+  },
+
+  async activate(emailArg) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    await prisma.user.update({ where: { id: user.id }, data: { status: user.emailVerifiedAt ? 'ACTIVE' : 'PENDING' } });
+    console.log(`Cuenta reactivada: ${email}`);
+  },
+
+  async invite(...args) {
+    const options = { uses: '1', days: '14' };
+    for (let i = 0; i < args.length; i += 2) {
+      const key = args[i]?.replace(/^--/, '');
+      if (!['email', 'uses', 'days', 'note'].includes(key) || args[i + 1] === undefined) {
+        throw new Error('Uso: invite [--email x] [--uses n] [--days n] [--note "..."]');
+      }
+      options[key] = args[i + 1];
+    }
+    const uses = Number.parseInt(options.uses, 10);
+    const days = Number.parseInt(options.days, 10);
+    if (!(uses >= 1 && uses <= 1000) || !(days >= 1 && days <= 365)) throw new Error('--uses va de 1 a 1000 y --days de 1 a 365');
+    // Sin caracteres ambiguos (0/O, 1/I): se puede dictar o copiar a mano.
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const raw = Array.from({ length: 12 }, () => alphabet[randomInt(alphabet.length)]).join('');
+    await prisma.invitation.create({
+      data: {
+        // El código que se entrega es BR-XXXX-XXXX-XXXX; la API lo normaliza (sin guiones, en mayúsculas) y lo compara con este hash.
+        codeHash: createHash('sha256').update(`BR${raw}`).digest('hex'),
+        email: options.email ? normalizeEmail(options.email) : null,
+        maxUses: uses,
+        expiresAt: new Date(Date.now() + days * 24 * 3600 * 1000),
+        note: options.note?.slice(0, 200) ?? null,
+      },
+    });
+    console.log(`Código de invitación (se muestra una sola vez): BR-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8)}`);
+    console.log(`Vale para ${uses} ${uses === 1 ? 'registro' : 'registros'}${options.email ? ` de ${options.email}` : ''}, durante ${days} días.`);
+  },
+
+  async invitations() {
+    const rows = await prisma.invitation.findMany({ orderBy: { createdAt: 'asc' } });
+    for (const i of rows) {
+      console.log(`${i.id}  usos:${i.uses}/${i.maxUses}  caduca:${i.expiresAt?.toISOString() ?? '-'}  correo:${i.email ?? '-'}  nota:${i.note ?? '-'}`);
     }
   },
 };
@@ -109,7 +174,7 @@ const commands = {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!commands[command]) {
-    console.error('Uso: user-admin.js <set-owner|create|set-password|list> ...');
+    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|invite|invitations> ...');
     process.exitCode = 2;
     return;
   }

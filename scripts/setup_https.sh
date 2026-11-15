@@ -97,6 +97,12 @@ server {
         ${proxy_common}
     }
 
+    # Registro y recuperación: mismo límite por IP que el acceso (la API aplica además los suyos por correo).
+    location ~ ^/api/auth/(register|forgot-password|resend-verification|reset-password)$ {
+        limit_req zone=bookreader_login burst=5 nodelay;
+        ${proxy_common}
+    }
+
     # Rutas de las apps compatibles con Audiobookshelf (viven en la raíz, fuera de /api).
     location = /ping {
         ${proxy_common}

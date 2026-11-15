@@ -1,12 +1,14 @@
-import { useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link as RouterLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { getAuthConfig, type RegistrationMode } from '../api'
 import { useAuth } from '../auth'
 
 export default function LoginView() {
@@ -19,6 +21,13 @@ export default function LoginView() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [registration, setRegistration] = useState<RegistrationMode>('closed')
+
+  useEffect(() => {
+    getAuthConfig()
+      .then((config) => setRegistration(config.registration))
+      .catch(() => undefined)
+  }, [])
 
   if (user) return <Navigate to={from} replace />
 
@@ -65,6 +74,17 @@ export default function LoginView() {
             <Button type="submit" variant="contained" disabled={busy}>
               Entrar
             </Button>
+            <Link component={RouterLink} to="/olvide" variant="body2">
+              Olvidé mi contraseña
+            </Link>
+            {registration !== 'closed' && (
+              <Typography variant="body2">
+                ¿No tienes cuenta?{' '}
+                <Link component={RouterLink} to="/registro">
+                  Crear cuenta
+                </Link>
+              </Typography>
+            )}
           </Stack>
         </form>
       </Paper>

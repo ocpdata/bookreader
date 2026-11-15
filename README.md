@@ -123,7 +123,15 @@ Cada audio pertenece a un usuario y todas las consultas se filtran por él; un a
 - **Sesiones en servidor**: el login (`POST /api/auth/login`, correo + contraseña) crea una fila en `sessions` y entrega la cookie `br_session` (`HttpOnly`, `SameSite=Lax`, `Secure` si `NODE_ENV=production` o `COOKIE_SECURE=true`). La BD guarda solo el hash SHA-256 del token. Caducan a los 30 días de inactividad (se renuevan como máximo una vez al día) y las vencidas se limpian cada hora. `GET /api/auth/me` devuelve el usuario; `POST /api/auth/password` cambia la contraseña y cierra las demás sesiones (contraseña actual errónea → 400).
 - **Contraseñas**: bcrypt (`BCRYPT_COST`, 12 por defecto), de 12 a 72 bytes. Mismo error genérico para correo desconocido y contraseña errónea. Límite de intentos en memoria: 5 fallos por IP + correo y 30 por IP cada 15 min (429).
 - **CSRF**: `OriginGuard` rechaza peticiones que cambian datos si `Origin` no coincide con el host (o con `ALLOWED_ORIGINS`, separados por comas) o si `Sec-Fetch-Site` es cross-site. El proxy debe conservar `Host` (Nginx y el proxy de Vite lo hacen).
-- **Registro cerrado**: los usuarios se crean solo con el script de administración, que pide la contraseña sin eco (o `USER_ADMIN_PASSWORD`); nunca la pases por chat ni la dejes en el historial.
+- **Registro con correo y contraseña** (`REGISTRATION_MODE`: `closed` por defecto, `invite` o `open`; variable de GitHub del mismo nombre, que el despliegue copia a la VM):
+  - `POST /api/auth/register` (nombre, correo, contraseña, aceptar términos y, en `invite`, el código). Crea la cuenta **pendiente** y envía por correo un enlace de verificación (24 h); hasta verificarla no se puede entrar (ni en la web ni en las apps). `POST /api/auth/verify-email` canjea el enlace (la pantalla `/verificar` lo hace con un POST: un escáner de enlaces no lo gasta). `POST /api/auth/resend-verification` reenvía.
+  - `POST /api/auth/forgot-password` y `POST /api/auth/reset-password` (enlace de 1 h, de un solo uso): al restablecer se cierran todas las sesiones y las apps vinculadas, la cuenta queda verificada y se avisa por correo. Cambiar la contraseña desde la cuenta también avisa por correo.
+  - **Sin enumeración**: el registro, el reenvío y "olvidé mi contraseña" responden siempre lo mismo; es el correo el que dice qué pasó (cuenta existente, enlace nuevo...). Una cuenta pendiente que se vuelve a registrar recibe un enlace nuevo, pero su contraseña **no se pisa** (si no, quien se adelantara se quedaría con la cuenta que la persona verifica).
+  - **Límites**: registro 10/h por IP; reenvío y "olvidé" 10/h por IP; como máximo 3 correos por hora a una misma dirección (se omiten en silencio); Nginx limita además estas rutas por IP. Las contraseñas comunes, o que contienen el correo o el nombre, se rechazan. Las cuentas pendientes de más de 7 días se borran.
+  - Los enlaces y las invitaciones se guardan solo como hash SHA-256. Se acepta una versión de términos (`TERMS_VERSION`) que queda registrada.
+  - **Invitaciones** (`invite`): `user-admin.js invite [--email x] [--uses n] [--days n] [--note ...]` crea un código `BR-XXXX-XXXX-XXXX` que se muestra una sola vez; se consume de forma atómica al crear la cuenta.
+  - **Correo**: `MailService` envía por Amazon SES en producción (`MAIL_DRIVER=ses`, `MAIL_FROM`, `SES_CONFIGURATION_SET`, `APP_PUBLIC_URL`); en desarrollo y pruebas solo registra el mensaje (el enlace sale en la consola del backend). `scripts/mail-test.js <correo>` prueba el envío en la VM. Mientras SES esté en modo de pruebas solo escribe a direcciones verificadas.
+- **Administración**: el script crea cuentas ya verificadas, suspende (`suspend` cierra sus sesiones y apps; no entra ni recibe correos) y reactiva, y gestiona invitaciones; pide la contraseña sin eco (o `USER_ADMIN_PASSWORD`); nunca la pases por chat ni la dejes en el historial.
 
 ```bash
 cd backend
@@ -131,11 +139,14 @@ npm run user -- set-owner correo@dominio.com "Nombre"   # asigna correo y contra
 npm run user -- create correo@dominio.com "Nombre"
 npm run user -- set-password correo@dominio.com
 npm run user -- list
+npm run user -- suspend correo@dominio.com               # y: activate
+npm run user -- invite --email correo@dominio.com --uses 1 --days 14 --note "para Ana"
+npm run user -- invitations
 ```
 
 En la VM: `ssh -t … "cd /var/app/bookreader/current/backend && node --env-file=/var/app/bookreader/shared/api.env scripts/user-admin.js set-owner correo@dominio.com 'Nombre'"`.
 
-`UserResolver` (`backend/src/auth/`) es el único punto que decide quién es el usuario de la petición; `users.external_id` está reservado para el `sub` de Amazon Cognito, al que se migrará (con una Lambda de migración de usuarios) antes de abrir el registro. Pendiente: quitar el valor por defecto de `summaries.user_id`.
+`UserResolver` (`backend/src/auth/`) es el único punto que decide quién es el usuario de la petición; `users.external_id` está reservado para el `sub` de Amazon Cognito, al que se podrá migrar después (con una Lambda de migración de usuarios): se conserva el hash bcrypt y `email_verified_at` expresa lo mismo que `email_verified` de Cognito. Pendiente: quitar el valor por defecto de `summaries.user_id`. Los términos y el aviso de privacidad (`/terminos`, `/privacidad`) son un **borrador** pendiente de revisión legal.
 
 ## Pruebas
 

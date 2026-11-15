@@ -11,12 +11,17 @@ import Typography from '@mui/material/Typography'
 import { listCategories } from './api'
 import { useAuth } from './auth'
 import AccountView from './components/AccountView'
+import ForgotPasswordView from './components/ForgotPasswordView'
 import HomeView from './components/HomeView'
+import { PrivacyView, TermsView } from './components/LegalViews'
 import LibraryView from './components/LibraryView'
 import LoginView from './components/LoginView'
+import RegisterView from './components/RegisterView'
+import ResetPasswordView from './components/ResetPasswordView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
 import TrashView from './components/TrashView'
+import VerifyEmailView from './components/VerifyEmailView'
 import type { Category } from './types'
 
 const navSx = { '&.active': { textDecoration: 'underline' } }
@@ -92,6 +97,12 @@ export default function App() {
         )}
         <Routes>
           <Route path="/entrar" element={<LoginView />} />
+          <Route path="/registro" element={<RegisterView />} />
+          <Route path="/verificar" element={<VerifyEmailView />} />
+          <Route path="/olvide" element={<ForgotPasswordView />} />
+          <Route path="/restablecer" element={<ResetPasswordView />} />
+          <Route path="/terminos" element={<TermsView />} />
+          <Route path="/privacidad" element={<PrivacyView />} />
           <Route path="/" element={<RequireAuth><HomeView /></RequireAuth>} />
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />

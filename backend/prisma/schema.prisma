@@ -8,6 +8,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum EmailTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
 enum SummaryStatus {
   PENDING
   READY
@@ -15,23 +26,29 @@ enum SummaryStatus {
 
 // Usuario único hasta que exista el login. El id fijo se crea en la migración.
 model User {
-  id           String             @id @default(uuid()) @db.VarChar(36)
-  name         String             @db.VarChar(100)
-  email        String?            @unique @db.VarChar(255)
-  passwordHash String?            @map("password_hash") @db.VarChar(255)
-  createdAt    DateTime           @default(now()) @map("created_at")
+  id              String             @id @default(uuid()) @db.VarChar(36)
+  name            String             @db.VarChar(100)
+  email           String?            @unique @db.VarChar(255)
+  passwordHash    String?            @map("password_hash") @db.VarChar(255)
+  createdAt       DateTime           @default(now()) @map("created_at")
   // Identificador del proveedor externo (sub de Cognito) cuando se migre; nulo con el login propio.
-  externalId   String?            @unique @map("external_id") @db.VarChar(64)
-  lastLoginAt  DateTime?          @map("last_login_at")
-  summaries    Summary[]
-  progress     PlaybackProgress[]
-  tags         Tag[]
-  favorites    Favorite[]
-  sessions     Session[]
-  folders      Folder[]
-  apiTokens    ApiToken[]
-  playSessions PlaySession[]
-  bookmarks    Bookmark[]
+  externalId      String?            @unique @map("external_id") @db.VarChar(64)
+  // PENDIENTE hasta verificar el correo; SUSPENDIDO no puede entrar (ver scripts/user-admin.js).
+  status          UserStatus         @default(ACTIVE)
+  emailVerifiedAt DateTime?          @map("email_verified_at")
+  termsAcceptedAt DateTime?          @map("terms_accepted_at")
+  termsVersion    String?            @map("terms_version") @db.VarChar(20)
+  lastLoginAt     DateTime?          @map("last_login_at")
+  summaries       Summary[]
+  progress        PlaybackProgress[]
+  tags            Tag[]
+  favorites       Favorite[]
+  sessions        Session[]
+  folders         Folder[]
+  apiTokens       ApiToken[]
+  playSessions    PlaySession[]
+  bookmarks       Bookmark[]
+  emailTokens     EmailToken[]
 
   @@map("users")
 }
@@ -225,4 +242,35 @@ model Bookmark {
   @@unique([userId, summaryId, timeSeconds])
   @@index([summaryId])
   @@map("bookmarks")
+}
+
+// Enlace de un solo uso enviado por correo (verificar el correo o restablecer la contraseña). Solo se guarda el hash.
+model EmailToken {
+  id        String            @id @default(uuid()) @db.VarChar(36)
+  userId    String            @map("user_id") @db.VarChar(36)
+  purpose   EmailTokenPurpose
+  tokenHash String            @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime          @map("expires_at")
+  usedAt    DateTime?         @map("used_at")
+  createdAt DateTime          @default(now()) @map("created_at")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+  @@map("email_tokens")
+}
+
+// Código de invitación para el registro en modo "invite". Se guarda solo el hash; lo crea el administrador por CLI.
+model Invitation {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  codeHash  String    @unique @map("code_hash") @db.VarChar(64)
+  // Si se indica, solo ese correo puede usarla.
+  email     String?   @db.VarChar(255)
+  maxUses   Int       @default(1) @map("max_uses")
+  uses      Int       @default(0)
+  expiresAt DateTime? @map("expires_at")
+  note      String?   @db.VarChar(200)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("invitations")
 }

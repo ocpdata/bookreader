@@ -303,5 +303,32 @@ describe('Autenticación (e2e)', () => {
       await login('nuevo@auth.test', 'contraseña-nueva-9876');
       expect(run(['set-password', 'inexistente@auth.test'], PASSWORD).status).toBe(1);
     });
+
+    it('crea usuarios ya verificados, suspende y reactiva cuentas, y crea invitaciones sin guardar el código', async () => {
+      expect(run(['create', 'verificado@auth.test', 'Verificado'], PASSWORD).status).toBe(0);
+      const created = await prisma.user.findUniqueOrThrow({ where: { email: 'verificado@auth.test' } });
+      expect([created.status, created.emailVerifiedAt !== null]).toEqual(['ACTIVE', true]);
+
+      const { cookie } = await login('verificado@auth.test');
+      expect(run(['suspend', 'verificado@auth.test']).status).toBe(0);
+      await api().get('/api/auth/me').set('Cookie', cookie).expect(401);
+      await api().post('/api/auth/login').send({ email: 'verificado@auth.test', password: PASSWORD }).expect(403);
+      expect(run(['suspend', 'inexistente@auth.test']).status).toBe(1);
+      expect(run(['activate', 'verificado@auth.test']).status).toBe(0);
+      await login('verificado@auth.test');
+
+      const invite = run(['invite', '--email', 'Invitada@Auth.test', '--uses', '3', '--days', '7', '--note', 'prueba-cli']);
+      expect(invite.status).toBe(0);
+      const code = /BR-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}/.exec(invite.stdout)?.[0] as string;
+      expect(code).toBeDefined();
+      const stored = await prisma.invitation.findFirstOrThrow({ where: { note: 'prueba-cli' } });
+      expect(stored).toMatchObject({ email: 'invitada@auth.test', maxUses: 3, uses: 0 });
+      expect(stored.codeHash).toBe(require('node:crypto').createHash('sha256').update(code.replace(/-/g, '')).digest('hex'));
+      expect(JSON.stringify(stored)).not.toContain(code);
+      expect(stored.expiresAt!.getTime() - Date.now()).toBeGreaterThan(6 * DAY);
+      expect(run(['invite', '--uses', '0']).status).toBe(1);
+      expect(run(['invite', '--bogus', 'x']).status).toBe(1);
+      await prisma.invitation.deleteMany({ where: { note: 'prueba-cli' } });
+    });
   });
 });

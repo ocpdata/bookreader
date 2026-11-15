@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 import { ApiTokenService } from './api-token.service';
 import { PasswordService } from './password.service';
+import { RegistrationService } from './registration.service';
 import { SessionService } from './session.service';
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
@@ -18,6 +20,7 @@ export class AuthService {
     private readonly sessions: SessionService,
     private readonly limiter: LoginRateLimiter,
     private readonly apiTokens: ApiTokenService,
+    private readonly registration: RegistrationService,
   ) {}
 
   /** Comprueba correo y contraseña con límite de intentos y error genérico; no crea ninguna sesión. */
@@ -37,6 +40,11 @@ export class AuthService {
     }
 
     this.limiter.reset(ip, email);
+    // Solo después de comprobar la contraseña se dice por qué no puede entrar (no delata cuentas a quien no la conoce).
+    if (user.status === UserStatus.PENDING) {
+      throw new ForbiddenException('Verifica tu correo para entrar: te enviamos un enlace al registrarte.');
+    }
+    if (user.status === UserStatus.SUSPENDED) throw new ForbiddenException('Tu cuenta está suspendida.');
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     return user;
   }
@@ -70,5 +78,6 @@ export class AuthService {
     await this.sessions.destroyOthers(userId, sessionToken);
     // Los dispositivos vinculados también deben volver a iniciar sesión con la contraseña nueva.
     await this.apiTokens.revokeAll(userId);
+    await this.registration.notifyPasswordChanged(user);
   }
 }
