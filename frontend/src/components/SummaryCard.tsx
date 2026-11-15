@@ -20,9 +20,23 @@ interface Props {
   onToggleFavorite: (summary: Summary) => void
   onTagClick?: (tag: string) => void
   onDelete?: (summary: Summary) => void
+  onMove?: (summary: Summary) => void
+  /** Ruta de su carpeta, cuando la lista mezcla carpetas (búsqueda y filtros). */
+  folderPath?: string
+  onFolderClick?: (summary: Summary) => void
 }
 
-export default function SummaryCard({ summary: s, compact = false, activeTag = '', onToggleFavorite, onTagClick, onDelete }: Props) {
+export default function SummaryCard({
+  summary: s,
+  compact = false,
+  activeTag = '',
+  onToggleFavorite,
+  onTagClick,
+  onDelete,
+  onMove,
+  folderPath,
+  onFolderClick,
+}: Props) {
   const navigate = useNavigate()
   const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
   const progress = s.progress
@@ -50,6 +64,15 @@ export default function SummaryCard({ summary: s, compact = false, activeTag = '
         </Stack>
         {!compact && s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
         <Typography color="text.secondary">{meta}</Typography>
+        {!compact && folderPath && (
+          <Chip
+            label={`📁 ${folderPath}`}
+            size="small"
+            variant="outlined"
+            sx={{ mt: 0.5 }}
+            onClick={onFolderClick ? () => onFolderClick(s) : undefined}
+          />
+        )}
         {!compact && s.narrator && (
           <Typography variant="body2" color="text.secondary">
             Narra: {s.narrator}
@@ -80,6 +103,7 @@ export default function SummaryCard({ summary: s, compact = false, activeTag = '
       <CardActions>
         <Button onClick={() => navigate(`/audios/${s.id}`)}>{inProgress ? 'Continuar' : 'Escuchar'}</Button>
         {!compact && <Button onClick={() => navigate(`/audios/${s.id}/editar`)}>Editar</Button>}
+        {!compact && onMove && <Button onClick={() => onMove(s)}>Mover</Button>}
         {!compact && onDelete && (
           <Button color="error" onClick={() => onDelete(s)} sx={{ ml: 'auto' }}>
             Eliminar

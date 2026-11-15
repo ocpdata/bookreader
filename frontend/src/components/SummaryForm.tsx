@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
@@ -8,9 +8,10 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, listTags, updateSummary } from '../api'
+import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, listFolders, listTags, updateSummary } from '../api'
 import { formatDuration } from '../format'
-import type { Category, Summary, TagSuggestion } from '../types'
+import type { Category, Folder, Summary, TagSuggestion } from '../types'
+import FolderSelect from './FolderSelect'
 
 const MAX_TAGS = 10
 
@@ -22,6 +23,7 @@ export default function SummaryForm({ categories }: Props) {
   const { id } = useParams()
   const navigate = useNavigate()
   const editing = Boolean(id)
+  const [searchParams] = useSearchParams()
 
   const [original, setOriginal] = useState<Summary | null>(null)
   const [title, setTitle] = useState('')
@@ -29,6 +31,9 @@ export default function SummaryForm({ categories }: Props) {
   const [summaryTitle, setSummaryTitle] = useState('')
   const [narrator, setNarrator] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  // Un audio nuevo nace en la carpeta desde la que se agregó.
+  const [folderId, setFolderId] = useState(editing ? '' : (searchParams.get('carpeta') ?? ''))
+  const [folders, setFolders] = useState<Folder[]>([])
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagQuery, setTagQuery] = useState('')
@@ -50,6 +55,7 @@ export default function SummaryForm({ categories }: Props) {
         setSummaryTitle(s.summaryTitle ?? '')
         setNarrator(s.narrator ?? '')
         setCategoryId(s.categoryId)
+        setFolderId(s.folderId ?? '')
         setDescription(s.description ?? '')
         setTags(s.tags)
       })
@@ -59,6 +65,12 @@ export default function SummaryForm({ categories }: Props) {
       cancelled = true
     }
   }, [id])
+
+  useEffect(() => {
+    listFolders()
+      .then(setFolders)
+      .catch(() => undefined)
+  }, [])
 
   // Sugerencias: etiquetas ya usadas que coinciden con lo que se escribe.
   useEffect(() => {
@@ -83,12 +95,12 @@ export default function SummaryForm({ categories }: Props) {
       if (file.size > MAX_AUDIO_BYTES) return setError('El archivo supera el máximo de 200 MB')
     }
 
-    const fields = { title, author, summaryTitle, narrator, description, categoryId, tags }
+    const fields = { title, author, summaryTitle, narrator, description, categoryId, folderId: folderId || null, tags }
     setSaving(true)
     try {
       if (id) await updateSummary(id, fields)
       else await createSummary(fields, file!)
-      navigate('/biblioteca')
+      navigate(folderId ? `/biblioteca?carpeta=${folderId}` : '/biblioteca')
     } catch (err) {
       setError((err as Error).message)
       setSaving(false)
@@ -129,6 +141,7 @@ export default function SummaryForm({ categories }: Props) {
             </MenuItem>
           ))}
         </TextField>
+        <FolderSelect folders={folders} value={folderId} onChange={setFolderId} label="Carpeta" />
         <Autocomplete
           multiple
           freeSolo

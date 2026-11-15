@@ -1,5 +1,6 @@
 import type {
   Category,
+  Folder,
   HomeData,
   LibraryFilters,
   Progress,
@@ -78,7 +79,11 @@ export const changePassword = (current: string, next: string) =>
 
 export const listCategories = () => request<Category[]>('/categories')
 
-export async function listSummaries({ search, categoryId, tag, favorite, status, sort }: LibraryFilters) {
+/** folderId: id de carpeta, "root" para los audios sin carpeta o undefined para toda la biblioteca. */
+export async function listSummaries(
+  { search, categoryId, tag, favorite, status, sort }: LibraryFilters,
+  folderId?: string,
+) {
   await settlePendingSaves()
   const params = new URLSearchParams()
   if (search) params.set('search', search)
@@ -86,9 +91,24 @@ export async function listSummaries({ search, categoryId, tag, favorite, status,
   if (tag) params.set('tag', tag)
   if (favorite) params.set('favorite', 'true')
   if (status) params.set('status', status)
+  if (folderId) params.set('folderId', folderId)
   params.set('sort', sort)
   return request<Summary[]>(`/summaries?${params}`)
 }
+
+export const listFolders = () => request<Folder[]>('/folders')
+
+export const createFolder = (name: string, parentId: string | null) =>
+  request<Folder>('/folders', { method: 'POST', body: JSON.stringify({ name, parentId }) })
+
+export const updateFolder = (id: string, changes: { name?: string; parentId?: string | null }) =>
+  request<Folder>(`/folders/${id}`, { method: 'PATCH', body: JSON.stringify(changes) })
+
+export const deleteFolder = (id: string) =>
+  request<{ movedFolders: number; movedAudios: number }>(`/folders/${id}`, { method: 'DELETE' })
+
+export const moveSummaries = (ids: string[], folderId: string | null) =>
+  request<{ moved: number }>('/summaries/move', { method: 'POST', body: JSON.stringify({ ids, folderId }) })
 
 export const getHome = async () => {
   await settlePendingSaves()

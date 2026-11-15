@@ -1,7 +1,13 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SummariesService } from './summaries.service';
-import { CreateSummaryDto, ListSummariesQuery, SaveProgressDto, UpdateSummaryDto } from './summaries.dto';
+import {
+  CreateSummaryDto,
+  ListSummariesQuery,
+  MoveSummariesDto,
+  SaveProgressDto,
+  UpdateSummaryDto,
+} from './summaries.dto';
 
 @Controller('summaries')
 export class SummariesController {
@@ -10,6 +16,13 @@ export class SummariesController {
   @Get()
   list(@CurrentUser() userId: string, @Query() query: ListSummariesQuery) {
     return this.summaries.list(userId, query);
+  }
+
+  /** Mueve varios audios a una carpeta (folderId null = raíz) en una sola operación. */
+  @Post('move')
+  @HttpCode(200)
+  move(@CurrentUser() userId: string, @Body() dto: MoveSummariesDto) {
+    return this.summaries.moveMany(userId, dto);
   }
 
   @Get(':id')

@@ -22,6 +22,7 @@ export interface Summary {
   favorite: boolean
   categoryId: string
   category: Category
+  folderId: string | null
   originalFilename: string
   sizeBytes: number
   status: 'PENDING' | 'READY'
@@ -35,6 +36,7 @@ export interface SummaryFields {
   narrator: string
   description: string
   categoryId: string
+  folderId: string | null
   tags: string[]
 }
 
@@ -79,4 +81,12 @@ export interface TrashItem {
   durationSeconds: number | null
   deletedAt: string
   purgeAt: string
+}
+
+export interface Folder {
+  id: string
+  parentId: string | null
+  name: string
+  /** Audios directamente en la carpeta (sin contar subcarpetas). */
+  count: number
 }

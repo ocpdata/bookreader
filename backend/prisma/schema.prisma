@@ -28,6 +28,7 @@ model User {
   tags         Tag[]
   favorites    Favorite[]
   sessions     Session[]
+  folders      Folder[]
 
   @@map("users")
 }
@@ -57,6 +58,9 @@ model Summary {
   durationSeconds  Int?               @map("duration_seconds")
   // Papelera: un audio eliminado conserva su fila y su archivo hasta que expire la retención.
   deletedAt        DateTime?          @map("deleted_at")
+  // Carpeta del usuario donde vive el audio; nulo = raíz. Al borrar la carpeta se reubica antes (ver FoldersService).
+  folderId         String?            @map("folder_id") @db.VarChar(36)
+  folder           Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
   categoryId       String             @map("category_id") @db.VarChar(36)
   category         Category           @relation(fields: [categoryId], references: [id])
   s3Key            String             @unique @map("s3_key") @db.VarChar(255)
@@ -68,6 +72,7 @@ model Summary {
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
   @@index([categoryId])
+  @@index([folderId])
   @@index([userId, createdAt])
   @@index([userId, deletedAt])
   @@index([status, createdAt])
@@ -141,4 +146,25 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// Carpetas jerárquicas de cada usuario. Un audio está en una sola carpeta (summaries.folder_id).
+// La unicidad del nombre entre hermanas la garantiza el índice único (salvo en la raíz, donde
+// parent_id es nulo y MySQL no lo aplica) y, sobre todo, FoldersService, que serializa las
+// escrituras de cada usuario.
+model Folder {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  userId    String    @map("user_id") @db.VarChar(36)
+  parentId  String?   @map("parent_id") @db.VarChar(36)
+  name      String    @db.VarChar(100)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[]  @relation("FolderTree")
+  summaries Summary[]
+
+  @@unique([userId, parentId, name])
+  @@index([parentId])
+  @@map("folders")
 }

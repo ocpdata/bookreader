@@ -1,5 +1,6 @@
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -8,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -70,6 +72,11 @@ export class UpdateSummaryDto {
   @IsUUID()
   categoryId?: string;
 
+  // undefined = no cambia; null = sacarlo de su carpeta (raíz).
+  @IsOptional()
+  @IsUUID()
+  folderId?: string | null;
+
   @IsOptional()
   @Transform(normalizeTags)
   @IsArray()
@@ -114,6 +121,10 @@ export class CreateSummaryDto {
   categoryId!: string;
 
   @IsOptional()
+  @IsUUID()
+  folderId?: string;
+
+  @IsOptional()
   @Transform(normalizeTags)
   @IsArray()
   @ArrayMaxSize(MAX_TAGS_PER_SUMMARY)
@@ -148,6 +159,15 @@ export class ListSummariesQuery {
   @IsUUID()
   categoryId?: string;
 
+  // "root" = audios sin carpeta.
+  @IsOptional()
+  @Matches(/^(root|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)
+  folderId?: string;
+
+  @IsOptional()
+  @IsIn(['true'])
+  includeSubfolders?: 'true';
+
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -177,4 +197,17 @@ export class SaveProgressDto {
   @IsOptional()
   @IsBoolean()
   completed?: boolean;
+}
+
+export class MoveSummariesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+
+  // Obligatorio: null = a la raíz.
+  @IsOptional()
+  @IsUUID()
+  folderId?: string | null;
 }

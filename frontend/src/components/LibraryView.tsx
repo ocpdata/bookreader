@@ -2,17 +2,33 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import Typography from '@mui/material/Typography'
-import { deleteSummary, listSummaries, listTags, restoreSummary, setFavorite } from '../api'
-import type { Category, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
+import {
+  createFolder,
+  deleteFolder,
+  deleteSummary,
+  listFolders,
+  listSummaries,
+  listTags,
+  restoreSummary,
+  setFavorite,
+  updateFolder,
+} from '../api'
+import { childrenOf, pathLabel, pathOf, subtreeIds, totalCount } from '../folders'
+import type { Category, Folder, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
 import ConfirmDialog from './ConfirmDialog'
+import FolderCard from './FolderCard'
+import FolderDialog from './FolderDialog'
+import MoveToFolderDialog from './MoveToFolderDialog'
 import SummaryCard from './SummaryCard'
 
 const SORTS: { value: SortOption; label: string }[] = [
@@ -39,12 +55,14 @@ export default function LibraryView({ categories }: Props) {
   const [params, setParams] = useSearchParams()
   const categoryId = params.get('categoria') ?? ''
   const tag = params.get('etiqueta') ?? ''
+  const folderParam = params.get('carpeta') ?? ''
   const favorite = params.get('favoritos') === '1'
   const status = (STATUSES.some((s) => s.value === params.get('estado')) ? params.get('estado') : '') as StatusFilter | ''
   const sort = (SORTS.some((s) => s.value === params.get('orden')) ? params.get('orden') : 'recent') as SortOption
 
   const [search, setSearch] = useState(params.get('q') ?? '')
   const [debouncedSearch, setDebouncedSearch] = useState(search.trim())
+  const hasFilters = Boolean(debouncedSearch || categoryId || tag || favorite || status)
   const [summaries, setSummaries] = useState<Summary[]>([])
   const [tags, setTags] = useState<TagSuggestion[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,6 +72,12 @@ export default function LibraryView({ categories }: Props) {
   // Último audio movido a la papelera, para ofrecer "Deshacer" (también cuando se eliminó desde la ficha).
   const [trashed, setTrashed] = useState<{ id: string; title: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [foldersLoaded, setFoldersLoaded] = useState(false)
+  const [folderDialog, setFolderDialog] = useState<{ folder: Folder | null } | null>(null)
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null)
+  const [toMove, setToMove] = useState<Summary | null>(null)
+  const [notice, setNotice] = useState('')
 
   const updateParams = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params)
@@ -84,6 +108,22 @@ export default function LibraryView({ categories }: Props) {
   }, [debouncedSearch])
 
   useEffect(() => {
+    listFolders()
+      .then((items) => {
+        setFolders(items)
+        setFoldersLoaded(true)
+      })
+      .catch((e: Error) => setError(e.message))
+  }, [reloadKey])
+
+  // Una carpeta de la URL que ya no existe (borrada) vuelve a la raíz.
+  const currentId = folders.some((f) => f.id === folderParam) ? folderParam : ''
+  useEffect(() => {
+    if (foldersLoaded && folderParam && !currentId) updateParams({ carpeta: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foldersLoaded, folderParam, currentId])
+
+  useEffect(() => {
     listTags()
       .then(setTags)
       .catch(() => undefined)
@@ -92,7 +132,8 @@ export default function LibraryView({ categories }: Props) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    listSummaries({ search: debouncedSearch, categoryId, tag, favorite, status, sort })
+    // Sin filtros se navega por carpetas; con búsqueda o filtros se mira toda la biblioteca.
+    listSummaries({ search: debouncedSearch, categoryId, tag, favorite, status, sort }, hasFilters ? undefined : folderParam || 'root')
       .then((items) => {
         if (cancelled) return
         setSummaries(items)
@@ -103,7 +144,7 @@ export default function LibraryView({ categories }: Props) {
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, categoryId, tag, favorite, status, sort, reloadKey])
+  }, [debouncedSearch, categoryId, tag, favorite, status, sort, folderParam, reloadKey])
 
   async function toggleFavorite(summary: Summary) {
     const value = !summary.favorite
@@ -149,18 +190,92 @@ export default function LibraryView({ categories }: Props) {
     }
   }
 
-  const hasFilters = Boolean(debouncedSearch || categoryId || tag || favorite || status)
+  const browsing = !hasFilters
+  const subfolders = childrenOf(folders, currentId || null)
+  const current = folders.find((f) => f.id === currentId)
+
+  const openFolder = (id: string) => {
+    const next = new URLSearchParams()
+    if (id) next.set('carpeta', id)
+    if (sort !== 'recent') next.set('orden', sort)
+    setSearch('')
+    setParams(next)
+  }
+
+  async function saveFolder(name: string, parentId: string | null) {
+    const editing = folderDialog?.folder
+    if (editing) await updateFolder(editing.id, { name, parentId })
+    else await createFolder(name, parentId)
+    setFolderDialog(null)
+    setReloadKey((k) => k + 1)
+  }
+
+  async function confirmDeleteFolder() {
+    if (!folderToDelete) return
+    setDeleting(true)
+    try {
+      await deleteFolder(folderToDelete.id)
+      setNotice(`Carpeta «${folderToDelete.name}» eliminada. Su contenido se conservó.`)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setDeleting(false)
+      setFolderToDelete(null)
+    }
+  }
+
+  function afterMove(summary: Summary, folderId: string | null) {
+    setToMove(null)
+    setNotice(`«${summary.title}» se movió a ${folderId ? pathLabel(folders, folderId) : 'la raíz'}`)
+    setReloadKey((k) => k + 1)
+  }
+
+  const deleteMessage = folderToDelete
+    ? (() => {
+        const audios = totalCount(folders, folderToDelete.id)
+        const subs = subtreeIds(folders, folderToDelete.id).size - 1
+        const parent = folderToDelete.parentId ? `«${pathLabel(folders, folderToDelete.parentId)}»` : 'la raíz'
+        const content = [
+          `${audios} ${audios === 1 ? 'audio' : 'audios'}`,
+          `${subs} ${subs === 1 ? 'subcarpeta' : 'subcarpetas'}`,
+        ].join(' y ')
+        return `Su contenido (${content}) pasará a ${parent}. No se borra ningún audio.`
+      })()
+    : ''
 
   return (
     <Stack spacing={2}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="h5" component="h1">
-          Mi biblioteca
+          {browsing && current ? current.name : 'Mi biblioteca'}
         </Typography>
-        <Button variant="contained" onClick={() => navigate('/audios/nuevo')}>
-          + Agregar resumen
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button onClick={() => setFolderDialog({ folder: null })}>+ Nueva carpeta</Button>
+          <Button variant="contained" onClick={() => navigate(`/audios/nuevo${currentId ? `?carpeta=${currentId}` : ''}`)}>
+            + Agregar resumen
+          </Button>
+        </Stack>
       </Stack>
+
+      {browsing && currentId && (
+        <Breadcrumbs aria-label="Ruta de carpetas">
+          <Link component="button" underline="hover" onClick={() => openFolder('')}>
+            Biblioteca
+          </Link>
+          {pathOf(folders, currentId).map((f, i, all) =>
+            i === all.length - 1 ? (
+              <Typography key={f.id} color="text.primary">
+                {f.name}
+              </Typography>
+            ) : (
+              <Link key={f.id} component="button" underline="hover" onClick={() => openFolder(f.id)}>
+                {f.name}
+              </Link>
+            ),
+          )}
+        </Breadcrumbs>
+      )}
 
       <TextField
         label="Buscar por título, autor o etiqueta"
@@ -245,7 +360,10 @@ export default function LibraryView({ categories }: Props) {
             size="small"
             onClick={() => {
               setSearch('')
-              setParams(sort === 'recent' ? {} : { orden: sort }, { replace: true })
+              const next = new URLSearchParams()
+              if (folderParam) next.set('carpeta', folderParam)
+              if (sort !== 'recent') next.set('orden', sort)
+              setParams(next, { replace: true })
             }}
           >
             Limpiar filtros
@@ -259,8 +377,27 @@ export default function LibraryView({ categories }: Props) {
           <CircularProgress size={28} />
         </Box>
       )}
-      {!loading && !error && summaries.length === 0 && (
-        <Typography color="text.secondary">No hay resúmenes que mostrar.</Typography>
+      {hasFilters && folders.length > 0 && (
+        <Typography variant="body2" color="text.secondary">
+          Buscando en toda la biblioteca, sin importar la carpeta.
+        </Typography>
+      )}
+      {browsing &&
+        subfolders.map((f) => (
+          <FolderCard
+            key={f.id}
+            folder={f}
+            total={totalCount(folders, f.id)}
+            subfolders={subtreeIds(folders, f.id).size - 1}
+            onOpen={(folder) => openFolder(folder.id)}
+            onEdit={(folder) => setFolderDialog({ folder })}
+            onDelete={setFolderToDelete}
+          />
+        ))}
+      {!loading && !error && summaries.length === 0 && (browsing ? subfolders.length === 0 : true) && (
+        <Typography color="text.secondary">
+          {browsing && current ? 'Esta carpeta está vacía.' : 'No hay resúmenes que mostrar.'}
+        </Typography>
       )}
 
       {summaries.map((s) => (
@@ -271,6 +408,9 @@ export default function LibraryView({ categories }: Props) {
           onToggleFavorite={toggleFavorite}
           onTagClick={(name) => updateParams({ etiqueta: name })}
           onDelete={setToDelete}
+          onMove={setToMove}
+          folderPath={hasFilters && s.folderId ? pathLabel(folders, s.folderId) : undefined}
+          onFolderClick={(summary) => openFolder(summary.folderId ?? '')}
         />
       ))}
 
@@ -284,6 +424,25 @@ export default function LibraryView({ categories }: Props) {
         onConfirm={confirmDelete}
         onCancel={() => setToDelete(null)}
       />
+      <FolderDialog
+        open={folderDialog !== null}
+        folders={folders}
+        folder={folderDialog?.folder}
+        defaultParentId={currentId}
+        onSubmit={saveFolder}
+        onClose={() => setFolderDialog(null)}
+      />
+      <ConfirmDialog
+        open={folderToDelete !== null}
+        title={`¿Eliminar la carpeta «${folderToDelete?.name ?? ''}»?`}
+        message={deleteMessage}
+        confirmLabel="Eliminar carpeta"
+        busy={deleting}
+        onConfirm={confirmDeleteFolder}
+        onCancel={() => setFolderToDelete(null)}
+      />
+      <MoveToFolderDialog summary={toMove} folders={folders} onMoved={afterMove} onClose={() => setToMove(null)} />
+      <Snackbar open={notice !== ''} autoHideDuration={6000} onClose={() => setNotice('')} message={notice} />
       <Snackbar
         open={trashed !== null}
         autoHideDuration={8000}

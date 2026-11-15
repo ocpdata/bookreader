@@ -123,11 +123,13 @@ describe('Summaries (e2e)', () => {
     storage.failAllDeletes = false;
     // Cada prueba parte de cero: la base persiste entre ejecuciones y las etiquetas no dependen de un audio.
     await prisma.summary.deleteMany();
+    await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
   });
 
   afterAll(async () => {
     await prisma.summary.deleteMany();
+    await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
     await prisma.$disconnect();
     await app.close();
@@ -813,6 +815,191 @@ describe('Summaries (e2e)', () => {
         },
       });
     }
+  });
+
+  describe('carpetas', () => {
+    const A = DEFAULT_USER_ID;
+    const api = () => request(app.getHttpServer());
+    const mk = async (name: string, parentId: string | null = null, user = A) => {
+      const res = await api().post('/api/folders').set(as(user)).send({ name, parentId });
+      expect({ name, status: res.status }).toEqual({ name, status: 201 });
+      return res.body.id as string;
+    };
+    const tree = async (user = A) => (await api().get('/api/folders').set(as(user))).body as any[];
+    const listIn = async (query: string, user = A) =>
+      (await api().get(`/api/summaries?${query}`).set(as(user))).body.map((s: any) => s.title).sort();
+
+    it('crea carpetas anidadas, las lista con su conteo y exige sesión', async () => {
+      const negocios = await mk('Negocios');
+      const ventas = await mk('Ventas', negocios);
+      await createReady(A, { title: 'En ventas', folderId: ventas });
+      await createReady(A, { title: 'En la raíz' });
+      const list = await tree();
+      expect(list.map((f) => [f.name, f.parentId, f.count])).toEqual([
+        ['Negocios', null, 0],
+        ['Ventas', negocios, 1],
+      ]);
+      await api().get('/api/folders').expect(401);
+    });
+
+    it('rechaza nombres duplicados entre hermanas (sin distinguir acentos ni mayúsculas) y permite el mismo nombre en otro nivel', async () => {
+      const a = await mk('Finanzas');
+      await mk('Hijo', a);
+      for (const [name, parentId] of [['FINANZAS', null], ['finánzas', null], ['hijo', a]] as const) {
+        const res = await api().post('/api/folders').set(as(A)).send({ name, parentId });
+        expect({ name, status: res.status }).toEqual({ name, status: 409 });
+      }
+      await mk('Finanzas', a);
+      // Otro usuario puede usar el mismo nombre.
+      await mk('Finanzas', null, USER_B);
+    });
+
+    it('valida nombre, padre y el cuerpo', async () => {
+      for (const body of [{ name: '   ' }, { name: 'x'.repeat(101) }, { name: 'a', parentId: 'no-uuid' }, {}]) {
+        const res = await api().post('/api/folders').set(as(A)).send(body);
+        expect({ body, status: res.status }).toEqual({ body, status: 400 });
+      }
+      const missing = await api().post('/api/folders').set(as(A)).send({ name: 'a', parentId: USER_B });
+      expect(missing.status).toBe(404);
+      const trimmed = await api().post('/api/folders').set(as(A)).send({ name: '  Mis   libros  ' });
+      expect(trimmed.body.name).toBe('Mis libros');
+    });
+
+    it('aísla las carpetas entre usuarios', async () => {
+      const mine = await mk('Mía');
+      const theirs = await mk('Suya', null, USER_B);
+      expect(await tree()).toHaveLength(1);
+      await api().patch(`/api/folders/${theirs}`).set(as(A)).send({ name: 'x' }).expect(404);
+      await api().delete(`/api/folders/${theirs}`).set(as(A)).expect(404);
+      await api().post('/api/folders').set(as(A)).send({ name: 'x', parentId: theirs }).expect(404);
+      await api().patch(`/api/folders/${mine}`).set(as(A)).send({ parentId: theirs }).expect(404);
+
+      const audio = await createReady(A, { title: 'Mío' });
+      await api().patch(`/api/summaries/${audio.id}`).set(as(A)).send({ folderId: theirs }).expect(404);
+      await createSummary(A, { folderId: theirs }).then((r) => expect(r.status).toBe(404));
+      await api().get(`/api/summaries?folderId=${theirs}`).set(as(A)).expect(404);
+      await api().post('/api/summaries/move').set(as(A)).send({ ids: [audio.id], folderId: theirs }).expect(404);
+    });
+
+    it('renombra y mueve carpetas; no permite ciclos ni pasar de 5 niveles', async () => {
+      const a = await mk('A');
+      const b = await mk('B', a);
+      const c = await mk('C', b);
+      const patch = (id: string, body: object) => api().patch(`/api/folders/${id}`).set(as(A)).send(body);
+
+      expect((await patch(a, { name: 'Alfa' })).body.name).toBe('Alfa');
+      expect((await patch(a, { parentId: a })).status).toBe(400);
+      expect((await patch(a, { parentId: c })).status).toBe(400);
+      expect((await patch(c, { parentId: null })).body.parentId).toBeNull();
+      await patch(c, { parentId: b }).expect(200);
+
+      // Cadena de 5 niveles: A > B > C > D > E. Un sexto nivel no cabe.
+      const d = await mk('D', c);
+      const e = await mk('E', d);
+      const sixth = await api().post('/api/folders').set(as(A)).send({ name: 'F', parentId: e });
+      expect(sixth.status).toBe(400);
+      // Mover un subárbol que haría pasar el límite también falla.
+      const other = await mk('Otra');
+      const deep = await mk('Hondo', other);
+      expect((await patch(other, { parentId: e })).status).toBe(400);
+      expect((await patch(deep, { parentId: e })).status).toBe(400);
+      // El nombre se valida al mover: no puede chocar en el destino.
+      await mk('B', null);
+      expect((await patch(b, { parentId: null })).status).toBe(409);
+    });
+
+    it('limita el número de carpetas por usuario', async () => {
+      await prisma.folder.createMany({
+        data: Array.from({ length: 200 }, (_, i) => ({ userId: A, name: `Carpeta ${i}` })),
+      });
+      const res = await api().post('/api/folders').set(as(A)).send({ name: 'Una más' });
+      expect(res.status).toBe(400);
+      expect((await api().post('/api/folders').set(as(USER_B)).send({ name: 'Una más' })).status).toBe(201);
+    });
+
+    it('guarda un audio al crearlo, lo mueve y lo filtra por carpeta (con o sin subcarpetas)', async () => {
+      const f = await mk('F');
+      const g = await mk('G', f);
+      const inF = await createReady(A, { title: 'en F', folderId: f });
+      await createReady(A, { title: 'en G', folderId: g });
+      await createReady(A, { title: 'raíz' });
+      expect(inF.folderId).toBe(f);
+
+      expect(await listIn(`folderId=${f}`)).toEqual(['en F']);
+      expect(await listIn(`folderId=${f}&includeSubfolders=true`)).toEqual(['en F', 'en G']);
+      expect(await listIn('folderId=root')).toEqual(['raíz']);
+      expect(await listIn('')).toEqual(['en F', 'en G', 'raíz']);
+
+      const moved = await api().patch(`/api/summaries/${inF.id}`).set(as(A)).send({ folderId: null });
+      expect(moved.body.folderId).toBeNull();
+      expect(await listIn('folderId=root')).toEqual(['en F', 'raíz']);
+      // Editar otro campo no cambia la carpeta.
+      await api().patch(`/api/summaries/${inF.id}`).set(as(A)).send({ folderId: g }).expect(200);
+      const renamed = await api().patch(`/api/summaries/${inF.id}`).set(as(A)).send({ title: 'nuevo' });
+      expect(renamed.body.folderId).toBe(g);
+      await api().get('/api/summaries?folderId=nope').set(as(A)).expect(400);
+    });
+
+    it('mueve varios audios de una vez, todo o nada', async () => {
+      const f = await mk('Destino');
+      const one = await createReady(A, { title: 'uno' });
+      const two = await createReady(A, { title: 'dos' });
+      const foreign = await createReady(USER_B, { title: 'ajeno' });
+      const move = (body: object, user = A) => api().post('/api/summaries/move').set(as(user)).send(body);
+
+      expect((await move({ ids: [one.id, foreign.id], folderId: f })).status).toBe(404);
+      expect(await listIn(`folderId=${f}`)).toEqual([]);
+      expect((await move({ ids: [one.id, two.id, one.id], folderId: f })).body).toEqual({ moved: 2 });
+      expect(await listIn(`folderId=${f}`)).toEqual(['dos', 'uno']);
+      expect((await move({ ids: [one.id], folderId: null })).body).toEqual({ moved: 1 });
+      expect((await move({ ids: [one.id] })).status).toBe(400);
+      expect((await move({ ids: [], folderId: f })).status).toBe(400);
+      // Un audio en la papelera no se mueve.
+      await api().delete(`/api/summaries/${two.id}`).set(as(A)).expect(204);
+      expect((await move({ ids: [two.id], folderId: null })).status).toBe(404);
+    });
+
+    it('al borrar una carpeta sus audios (también en papelera) y subcarpetas suben al padre', async () => {
+      const top = await mk('Top');
+      const mid = await mk('Mid', top);
+      await mk('Hoja', mid);
+      const live = await createReady(A, { title: 'vivo', folderId: mid });
+      const trashed = await createReady(A, { title: 'papelera', folderId: mid });
+      await api().delete(`/api/summaries/${trashed.id}`).set(as(A)).expect(204);
+
+      const res = await api().delete(`/api/folders/${mid}`).set(as(A));
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ movedFolders: 1, movedAudios: 2 });
+      expect((await tree()).map((f) => [f.name, f.parentId])).toEqual([['Hoja', top], ['Top', null]]);
+      expect((await api().get(`/api/summaries/${live.id}`).set(as(A))).body.folderId).toBe(top);
+
+      // Restaurar desde la papelera lo deja en la carpeta a la que subió.
+      const restored = await api().post(`/api/summaries/${trashed.id}/restore`).set(as(A));
+      expect(restored.body.folderId).toBe(top);
+    });
+
+    it('al borrar renombra las subcarpetas que chocan con las del padre', async () => {
+      const top = await mk('Top');
+      const mid = await mk('Mid', top);
+      await mk('Ventas', top);
+      await mk('Ventas', mid);
+      await mk('Mid', mid);
+      const audio = await createReady(A, { title: 'x', folderId: mid });
+      await api().delete(`/api/folders/${mid}`).set(as(A)).expect(200);
+
+      const underTop = (await tree()).filter((f) => f.parentId === top).map((f) => f.name).sort();
+      expect(underTop).toEqual(['Mid (2)', 'Ventas', 'Ventas (2)']);
+      expect((await api().get(`/api/summaries/${audio.id}`).set(as(A))).body.folderId).toBe(top);
+    });
+
+    it('un audio nuevo puede crearse directamente en una carpeta y el borrado definitivo no depende de ella', async () => {
+      const f = await mk('Temp');
+      const audio = await createReady(A, { title: 'para borrar', folderId: f });
+      await api().delete(`/api/summaries/${audio.id}`).set(as(A)).expect(204);
+      await api().delete(`/api/trash/${audio.id}`).set(as(A)).expect(204);
+      await api().delete(`/api/folders/${f}`).set(as(A)).expect(200);
+      expect(await tree()).toEqual([]);
+    });
   });
 
   it('valida los datos de entrada', async () => {

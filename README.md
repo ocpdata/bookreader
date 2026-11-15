@@ -45,7 +45,7 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | Método | Endpoint | Función |
 | --- | --- | --- |
 | GET | `/api/categories` | Listar categorías |
-| GET | `/api/summaries` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos ni mayúsculas). Parámetros: `search` (título, autor, título del resumen o etiqueta), `categoryId`, `tag`, `favorite=true`, `status=finished\|unfinished`, `sort=recent\|title\|duration\|listened` |
+| GET | `/api/summaries` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos ni mayúsculas). Parámetros: `search` (título, autor, título del resumen o etiqueta), `categoryId`, `folderId` (id o `root` = sin carpeta) con `includeSubfolders=true`, `tag`, `favorite=true`, `status=finished\|unfinished`, `sort=recent\|title\|duration\|listened` |
 | GET | `/api/summaries/:id` | Consultar un resumen |
 | POST | `/api/summaries` | Crear registro `PENDING` y obtener URL de carga |
 | POST | `/api/summaries/:id/complete` | Verificar el objeto en S3, leer su duración real (rechaza archivos que no son audio) y marcar `READY` |
@@ -61,6 +61,9 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | PUT / DELETE | `/api/summaries/:id/favorite` | Marcar / quitar de favoritos |
 | GET | `/api/tags?query=` | Etiquetas del usuario con su número de audios (para autocompletar y filtrar) |
 | GET | `/api/home` | Datos de la pantalla de inicio: `continueListening` (hasta 10), `recent` (8), `favorites` (8) y `categories` con su conteo |
+| GET / POST | `/api/folders` | Listar las carpetas del usuario (plana, con `parentId` y `count` de audios directos) / crear una (`name`, `parentId` opcional) |
+| PATCH / DELETE | `/api/folders/:id` | Renombrar o mover (`name`, `parentId`; `null` = raíz) / eliminar |
+| POST | `/api/summaries/move` | Mover varios audios (`ids` hasta 100, `folderId` o `null`); todo o nada |
 | GET | `/api/health` | Estado de la API y de la base de datos |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{userId}/{uuid}/audio.ext`.
@@ -78,6 +81,15 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 "Eliminar" mueve el audio a la papelera: deja de verse y reproducirse, pero conserva su fila, su archivo de S3, sus etiquetas, favorito y progreso, así que **restaurar** lo devuelve intacto (la interfaz ofrece "Deshacer"). Se borra de forma definitiva desde `/papelera` (con confirmación), al vaciarla, o automáticamente a los 30 días (`TRASH_RETENTION_DAYS`).
 
 Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y las cargas que nunca se completaron en 24 h; se desactiva con `PURGE_ENABLED=false` (en desarrollo local conviene dejarlo apagado). Salvaguardas: siempre se borra primero el archivo y después la fila (si S3 falla, la fila se conserva y se reintenta); el servidor solo borra la clave exacta guardada en la fila y solo si tiene la forma `audios/{userId}/{uuid}/audio.mp3|m4a` (o el formato anterior sin usuario); cada ejecución procesa como máximo 100 filas; un audio vivo nunca se purga. El rol de IAM de la VM necesita `s3:DeleteObject` sobre `audios/*` (definido en `infra/`).
+
+## Carpetas
+
+Cada usuario organiza sus audios en carpetas anidadas (hasta 5 niveles y 200 carpetas). Un audio está en **una sola** carpeta (`summaries.folder_id`; nulo = raíz) y las etiquetas y la categoría siguen sirviendo para agrupar de otras formas. El nombre es único entre carpetas hermanas (sin distinguir mayúsculas ni acentos). Una carpeta ajena responde 404.
+
+- **Mover**: una carpeta no puede ir dentro de sí misma ni de sus subcarpetas, ni superar los 5 niveles. Los audios se mueven uno a uno (`PATCH /api/summaries/:id` con `folderId`) o en lote (`POST /api/summaries/move`).
+- **Eliminar una carpeta** no borra nada: sus audios (también los de la papelera) y subcarpetas suben a la carpeta padre; una subcarpeta cuyo nombre ya existe arriba se renombra "X (2)". Restaurar un audio de la papelera lo deja en su carpeta (o en la que heredó).
+- **Concurrencia**: las escrituras de carpetas de un usuario se serializan con un bloqueo sobre su fila (`FoldersService`), así que nombre único, ciclos, profundidad y tope no compiten entre peticiones.
+- **Interfaz**: `/biblioteca?carpeta=<id>` navega por carpetas con migas de pan; con búsqueda o filtros se mira toda la biblioteca y cada audio muestra su ruta.
 
 ## Etiquetas y favoritos
 

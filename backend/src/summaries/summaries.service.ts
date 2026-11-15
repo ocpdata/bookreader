@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { FoldersService } from '../folders/folders.service';
 import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
@@ -11,6 +12,7 @@ import {
   AUDIO_TYPES,
   CreateSummaryDto,
   ListSummariesQuery,
+  MoveSummariesDto,
   SaveProgressDto,
   SortOption,
   UpdateSummaryDto,
@@ -64,12 +66,24 @@ export class SummariesService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly tags: TagsService,
+    private readonly folders: FoldersService,
     private readonly purge: PurgeService,
   ) {}
 
-  async list(userId: string, { search, categoryId, tag, favorite, status, sort }: ListSummariesQuery) {
+  async list(
+    userId: string,
+    { search, categoryId, folderId, includeSubfolders, tag, favorite, status, sort }: ListSummariesQuery,
+  ) {
     const where: Prisma.SummaryWhereInput = { userId, status: SummaryStatus.READY, deletedAt: null };
     if (categoryId) where.categoryId = categoryId;
+    if (folderId === 'root') {
+      where.folderId = null;
+    } else if (folderId && includeSubfolders) {
+      where.folderId = { in: await this.folders.withDescendantIds(userId, folderId) };
+    } else if (folderId) {
+      await this.folders.assertOwned(userId, folderId);
+      where.folderId = folderId;
+    }
     // La colación utf8mb4 de MySQL ignora mayúsculas y acentos, también en la igualdad de etiquetas.
     if (tag) where.tags = { some: { tag: { name: tag } } };
     if (favorite) where.favorites = { some: { userId } };
@@ -185,6 +199,7 @@ export class SummariesService {
       throw new BadRequestException('La extensión del archivo no coincide con su tipo (.mp3 o .m4a)');
     }
     await this.assertCategory(dto.categoryId);
+    if (dto.folderId) await this.folders.assertOwned(userId, dto.folderId);
 
     // Clave nueva por carga y prefijada por usuario: una URL prefirmada nunca sobrescribe un audio.
     const s3Key = `audios/${userId}/${randomUUID()}/audio${ext}`;
@@ -197,6 +212,7 @@ export class SummariesService {
         narrator: dto.narrator || null,
         description: dto.description || null,
         categoryId: dto.categoryId,
+        folderId: dto.folderId ?? null,
         s3Key,
         originalFilename: dto.originalFilename,
         sizeBytes: dto.sizeBytes,
@@ -233,6 +249,7 @@ export class SummariesService {
   async update(id: string, userId: string, dto: UpdateSummaryDto) {
     await this.get(id, userId);
     if (dto.categoryId) await this.assertCategory(dto.categoryId);
+    if (dto.folderId) await this.folders.assertOwned(userId, dto.folderId);
     await this.prisma.summary.update({
       where: { id },
       data: {
@@ -242,10 +259,24 @@ export class SummariesService {
         narrator: emptyToNull(dto.narrator),
         description: emptyToNull(dto.description),
         categoryId: dto.categoryId,
+        folderId: dto.folderId,
       },
     });
     if (dto.tags !== undefined) await this.tags.replaceForSummary(id, userId, dto.tags);
     return this.load(id, userId);
+  }
+
+  /** Todo o nada: si algún id no es un audio vivo del usuario, no se mueve ninguno. */
+  async moveMany(userId: string, { ids, folderId }: MoveSummariesDto) {
+    if (folderId === undefined) throw new BadRequestException('Indica folderId (null para la raíz)');
+    if (folderId) await this.folders.assertOwned(userId, folderId);
+    const unique = [...new Set(ids)];
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.summary.count({ where: { id: { in: unique }, userId, deletedAt: null } });
+      if (found !== unique.length) throw new NotFoundException('Algún audio no existe');
+      const { count } = await tx.summary.updateMany({ where: { id: { in: unique }, userId }, data: { folderId } });
+      return { moved: count };
+    });
   }
 
   async setFavorite(id: string, userId: string, favorite: boolean) {
