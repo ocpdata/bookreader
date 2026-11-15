@@ -113,6 +113,12 @@ variable "app_domain" {
   default     = ""
 }
 
+variable "mail_from_local_part" {
+  description = "Parte local del remitente de los correos (antes de @app_domain)."
+  type        = string
+  default     = "no-responder"
+}
+
 variable "db_instance_class" {
   type    = string
   default = "db.t4g.micro"

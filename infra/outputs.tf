@@ -24,3 +24,19 @@ output "db_port" {
 output "db_name" {
   value = aws_db_instance.main.db_name
 }
+
+output "mail_from" {
+  description = "Remitente de los correos transaccionales."
+  value       = local.mail_enabled ? local.mail_from : null
+}
+
+output "ses_dns_records" {
+  description = "Registros DNS (CNAME) de DKIM que hay que publicar para verificar el dominio en SES."
+  value = local.mail_enabled ? [
+    for token in aws_sesv2_email_identity.app[0].dkim_signing_attributes[0].tokens : {
+      type  = "CNAME"
+      name  = "${token}._domainkey.${var.app_domain}"
+      value = "${token}.dkim.amazonses.com"
+    }
+  ] : []
+}
