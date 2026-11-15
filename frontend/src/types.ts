@@ -18,6 +18,8 @@ export interface Summary {
   description: string | null
   durationSeconds: number | null
   progress: Progress | null
+  tags: string[]
+  favorite: boolean
   categoryId: string
   category: Category
   originalFilename: string
@@ -33,6 +35,23 @@ export interface SummaryFields {
   narrator: string
   description: string
   categoryId: string
+  tags: string[]
 }
 
-export type SortOption = 'recent' | 'title' | 'duration'
+export type SortOption = 'recent' | 'title' | 'duration' | 'listened'
+
+export type StatusFilter = 'finished' | 'unfinished'
+
+export interface TagSuggestion {
+  name: string
+  count: number
+}
+
+export interface LibraryFilters {
+  search: string
+  categoryId: string
+  tag: string
+  favorite: boolean
+  status: StatusFilter | ''
+  sort: SortOption
+}

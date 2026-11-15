@@ -1,4 +1,4 @@
-import type { Category, Progress, SortOption, Summary, SummaryFields } from './types'
+import type { Category, LibraryFilters, Progress, Summary, SummaryFields, TagSuggestion } from './types'
 
 const AUDIO_TYPES: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -46,14 +46,23 @@ const settlePendingSaves = () => Promise.allSettled([...pendingSaves])
 
 export const listCategories = () => request<Category[]>('/categories')
 
-export async function listSummaries(search: string, categoryId: string, sort: SortOption) {
+export async function listSummaries({ search, categoryId, tag, favorite, status, sort }: LibraryFilters) {
   await settlePendingSaves()
   const params = new URLSearchParams()
   if (search) params.set('search', search)
   if (categoryId) params.set('categoryId', categoryId)
+  if (tag) params.set('tag', tag)
+  if (favorite) params.set('favorite', 'true')
+  if (status) params.set('status', status)
   params.set('sort', sort)
   return request<Summary[]>(`/summaries?${params}`)
 }
+
+export const listTags = (query = '') =>
+  request<TagSuggestion[]>(`/tags${query ? `?query=${encodeURIComponent(query)}` : ''}`)
+
+export const setFavorite = (id: string, favorite: boolean) =>
+  request<unknown>(`/summaries/${id}/favorite`, { method: favorite ? 'PUT' : 'DELETE' })
 
 export const getSummary = async (id: string) => {
   await settlePendingSaves()

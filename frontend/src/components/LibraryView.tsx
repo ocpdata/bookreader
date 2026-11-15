@@ -7,20 +7,29 @@ import Card from '@mui/material/Card'
 import CardActions from '@mui/material/CardActions'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
-import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
+import LinearProgress from '@mui/material/LinearProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
 import Typography from '@mui/material/Typography'
-import { listSummaries } from '../api'
+import { listSummaries, listTags, setFavorite } from '../api'
 import { formatClock, formatDuration } from '../format'
-import type { Category, SortOption, Summary } from '../types'
+import type { Category, SortOption, StatusFilter, Summary, TagSuggestion } from '../types'
 
 const SORTS: { value: SortOption; label: string }[] = [
   { value: 'recent', label: 'Más recientes' },
+  { value: 'listened', label: 'Última escucha' },
   { value: 'title', label: 'Título (A–Z)' },
   { value: 'duration', label: 'Más largos' },
+]
+
+const STATUSES: { value: StatusFilter | ''; label: string }[] = [
+  { value: '', label: 'Todos' },
+  { value: 'unfinished', label: 'Pendientes' },
+  { value: 'finished', label: 'Terminados' },
 ]
 
 interface Props {
@@ -32,18 +41,24 @@ export default function LibraryView({ categories }: Props) {
   // Filtros y orden viven en la URL: el botón "atrás" vuelve a la misma búsqueda.
   const [params, setParams] = useSearchParams()
   const categoryId = params.get('categoria') ?? ''
+  const tag = params.get('etiqueta') ?? ''
+  const favorite = params.get('favoritos') === '1'
+  const status = (STATUSES.some((s) => s.value === params.get('estado')) ? params.get('estado') : '') as StatusFilter | ''
   const sort = (SORTS.some((s) => s.value === params.get('orden')) ? params.get('orden') : 'recent') as SortOption
 
   const [search, setSearch] = useState(params.get('q') ?? '')
   const [debouncedSearch, setDebouncedSearch] = useState(search.trim())
   const [summaries, setSummaries] = useState<Summary[]>([])
+  const [tags, setTags] = useState<TagSuggestion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const updateParam = (key: string, value: string) => {
+  const updateParams = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    }
     setParams(next, { replace: true })
   }
 
@@ -53,14 +68,20 @@ export default function LibraryView({ categories }: Props) {
   }, [search])
 
   useEffect(() => {
-    if ((params.get('q') ?? '') !== debouncedSearch) updateParam('q', debouncedSearch)
+    if ((params.get('q') ?? '') !== debouncedSearch) updateParams({ q: debouncedSearch })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch])
 
   useEffect(() => {
+    listTags()
+      .then(setTags)
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     setLoading(true)
-    listSummaries(debouncedSearch, categoryId, sort)
+    listSummaries({ search: debouncedSearch, categoryId, tag, favorite, status, sort })
       .then((items) => {
         if (cancelled) return
         setSummaries(items)
@@ -71,7 +92,27 @@ export default function LibraryView({ categories }: Props) {
     return () => {
       cancelled = true
     }
-  }, [debouncedSearch, categoryId, sort])
+  }, [debouncedSearch, categoryId, tag, favorite, status, sort])
+
+  async function toggleFavorite(summary: Summary) {
+    const value = !summary.favorite
+    // Actualización inmediata; si falla se revierte. Con el filtro de favoritos activo, sale de la lista.
+    const apply = (favoriteValue: boolean) =>
+      setSummaries((items) =>
+        items
+          .map((s) => (s.id === summary.id ? { ...s, favorite: favoriteValue } : s))
+          .filter((s) => !(favorite && !s.favorite)),
+      )
+    apply(value)
+    try {
+      await setFavorite(summary.id, value)
+    } catch (e) {
+      setError((e as Error).message)
+      setSummaries((items) => (items.some((s) => s.id === summary.id) ? items.map((s) => (s.id === summary.id ? { ...s, favorite: !value } : s)) : [...items, { ...summary, favorite: !value }]))
+    }
+  }
+
+  const hasFilters = Boolean(debouncedSearch || categoryId || tag || favorite || status)
 
   return (
     <Stack spacing={2}>
@@ -84,21 +125,30 @@ export default function LibraryView({ categories }: Props) {
         </Button>
       </Stack>
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-        <TextField
-          label="Buscar por título o autor"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          fullWidth
+      <TextField
+        label="Buscar por título, autor o etiqueta"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        fullWidth
+        size="small"
+      />
+      <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ToggleButton
+          value="favoritos"
           size="small"
-        />
+          selected={favorite}
+          onChange={() => updateParams({ favoritos: favorite ? '' : '1' })}
+          aria-label="Solo favoritos"
+        >
+          {favorite ? '★' : '☆'} Favoritos
+        </ToggleButton>
         <TextField
           select
           label="Categoría"
           value={categoryId}
-          onChange={(e) => updateParam('categoria', e.target.value)}
+          onChange={(e) => updateParams({ categoria: e.target.value })}
           size="small"
-          sx={{ minWidth: 200 }}
+          sx={{ minWidth: 170 }}
         >
           <MenuItem value="">Todas</MenuItem>
           {categories.map((c) => (
@@ -109,11 +159,43 @@ export default function LibraryView({ categories }: Props) {
         </TextField>
         <TextField
           select
+          label="Etiqueta"
+          value={tag}
+          onChange={(e) => updateParams({ etiqueta: e.target.value })}
+          size="small"
+          sx={{ minWidth: 150 }}
+        >
+          <MenuItem value="">Todas</MenuItem>
+          {tag && !tags.some((t) => t.name.toLowerCase() === tag.toLowerCase()) && (
+            <MenuItem value={tag}>{tag}</MenuItem>
+          )}
+          {tags.map((t) => (
+            <MenuItem key={t.name} value={t.name}>
+              {t.name} ({t.count})
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          label="Estado"
+          value={status}
+          onChange={(e) => updateParams({ estado: e.target.value })}
+          size="small"
+          sx={{ minWidth: 140 }}
+        >
+          {STATUSES.map((s) => (
+            <MenuItem key={s.value} value={s.value}>
+              {s.label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
           label="Ordenar por"
           value={sort}
-          onChange={(e) => updateParam('orden', e.target.value === 'recent' ? '' : e.target.value)}
+          onChange={(e) => updateParams({ orden: e.target.value === 'recent' ? '' : e.target.value })}
           size="small"
-          sx={{ minWidth: 170 }}
+          sx={{ minWidth: 160 }}
         >
           {SORTS.map((s) => (
             <MenuItem key={s.value} value={s.value}>
@@ -121,6 +203,17 @@ export default function LibraryView({ categories }: Props) {
             </MenuItem>
           ))}
         </TextField>
+        {hasFilters && (
+          <Button
+            size="small"
+            onClick={() => {
+              setSearch('')
+              setParams(sort === 'recent' ? {} : { orden: sort }, { replace: true })
+            }}
+          >
+            Limpiar filtros
+          </Button>
+        )}
       </Stack>
 
       {error && <Alert severity="error">{error}</Alert>}
@@ -142,9 +235,19 @@ export default function LibraryView({ categories }: Props) {
         return (
           <Card key={s.id} variant="outlined">
             <CardContent>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <Typography variant="h6">{s.title}</Typography>
-                {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
+              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <Typography variant="h6">{s.title}</Typography>
+                  {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
+                </Stack>
+                <IconButton
+                  onClick={() => toggleFavorite(s)}
+                  aria-label={s.favorite ? 'Quitar de favoritos' : 'Añadir a favoritos'}
+                  aria-pressed={s.favorite}
+                  color={s.favorite ? 'warning' : 'default'}
+                >
+                  {s.favorite ? '★' : '☆'}
+                </IconButton>
               </Stack>
               {s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
               <Typography color="text.secondary">{meta}</Typography>
@@ -152,6 +255,19 @@ export default function LibraryView({ categories }: Props) {
                 <Typography variant="body2" color="text.secondary">
                   Narra: {s.narrator}
                 </Typography>
+              )}
+              {s.tags.length > 0 && (
+                <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', mt: 1 }}>
+                  {s.tags.map((name) => (
+                    <Chip
+                      key={name}
+                      label={name}
+                      size="small"
+                      variant={name.toLowerCase() === tag.toLowerCase() ? 'filled' : 'outlined'}
+                      onClick={() => updateParams({ etiqueta: name })}
+                    />
+                  ))}
+                </Stack>
               )}
               {inProgress && (
                 <Box sx={{ mt: 1 }}>

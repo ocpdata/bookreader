@@ -98,11 +98,14 @@ describe('Summaries (e2e)', () => {
 
   beforeEach(async () => {
     storage.objects.clear();
+    // Cada prueba parte de cero: la base persiste entre ejecuciones y las etiquetas no dependen de un audio.
     await prisma.summary.deleteMany();
+    await prisma.tag.deleteMany();
   });
 
   afterAll(async () => {
     await prisma.summary.deleteMany();
+    await prisma.tag.deleteMany();
     await prisma.$disconnect();
     await app.close();
   });
@@ -312,6 +315,150 @@ describe('Summaries (e2e)', () => {
       expect((await getOne(id)).progress.positionSeconds).toBe(33);
       await prisma.summary.delete({ where: { id } });
       expect(await prisma.playbackProgress.count({ where: { summaryId: id } })).toBe(0);
+    });
+  });
+
+  describe('etiquetas', () => {
+    const tagsOf = async (id: string) =>
+      (await request(app.getHttpServer()).get(`/api/summaries/${id}`).set(as(DEFAULT_USER_ID))).body.tags;
+    const patch = (id: string, body: unknown, userId = DEFAULT_USER_ID) =>
+      request(app.getHttpServer()).patch(`/api/summaries/${id}`).set(as(userId)).send(body as object);
+    const suggest = async (query = '', userId = DEFAULT_USER_ID) =>
+      (await request(app.getHttpServer()).get('/api/tags').query({ query }).set(as(userId))).body;
+
+    it('crea con etiquetas, las normaliza y las reemplaza o quita al editar', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { tags: ['  Ventas  ', 'Liderazgo   equipos', '', 'ventas'] });
+      // Recorta, colapsa espacios, descarta vacías y no duplica ("ventas" = "Ventas").
+      expect(s.tags).toEqual(['Liderazgo equipos', 'Ventas']);
+
+      expect((await patch(s.id, { tags: ['Finanzas'] })).body.tags).toEqual(['Finanzas']);
+      // Sin el campo, no se tocan; con lista vacía, se quitan todas.
+      expect((await patch(s.id, { title: 'Otro título' })).body.tags).toEqual(['Finanzas']);
+      expect((await patch(s.id, { tags: [] })).body.tags).toEqual([]);
+    });
+
+    it('trata mayúsculas y acentos como la misma etiqueta y conserva la primera grafía', async () => {
+      const a = await createReady(DEFAULT_USER_ID, { tags: ['Psicología'] });
+      const b = await createReady(DEFAULT_USER_ID, { title: 'Otro', tags: ['psicologia'] });
+      expect(b.tags).toEqual(['Psicología']);
+      expect(await prisma.tag.count({ where: { userId: DEFAULT_USER_ID } })).toBe(1);
+      expect(a.tags).toEqual(['Psicología']);
+    });
+
+    it('sugiere etiquetas con su número de audios y filtra por texto sin acentos', async () => {
+      await createReady(DEFAULT_USER_ID, { tags: ['Ventas', 'Liderazgo'] });
+      await createReady(DEFAULT_USER_ID, { title: 'Dos', tags: ['Ventas'] });
+      expect(await suggest()).toEqual([
+        { name: 'Ventas', count: 2 },
+        { name: 'Liderazgo', count: 1 },
+      ]);
+      expect(await suggest('LIDER')).toEqual([{ name: 'Liderazgo', count: 1 }]);
+      expect(await suggest('%')).toEqual([]);
+    });
+
+    it('elimina las etiquetas que se quedan sin audios', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { tags: ['Temporal'] });
+      expect(await prisma.tag.count()).toBe(1);
+      await patch(s.id, { tags: [] });
+      expect(await prisma.tag.count()).toBe(0);
+    });
+
+    it('cada usuario tiene sus propias etiquetas', async () => {
+      await createReady(DEFAULT_USER_ID, { tags: ['Ventas'] });
+      expect(await suggest('', USER_B)).toEqual([]);
+      const theirs = await createSummary(USER_B, { tags: ['ventas'] });
+      expect(theirs.body.summary.tags).toEqual(['ventas']); // su propia etiqueta, no la de A
+      expect(await prisma.tag.count()).toBe(2);
+      expect(await suggest('', DEFAULT_USER_ID)).toEqual([{ name: 'Ventas', count: 1 }]);
+    });
+
+    it('filtra y busca por etiqueta', async () => {
+      await createReady(DEFAULT_USER_ID, { title: 'Uno', tags: ['Ventas'] });
+      await createReady(DEFAULT_USER_ID, { title: 'Dos', tags: ['Liderazgo'] });
+      const titles = async (query: Record<string, string>) =>
+        (await request(app.getHttpServer()).get('/api/summaries').query(query).set(as(DEFAULT_USER_ID))).body.map(
+          (s: any) => s.title,
+        );
+      expect(await titles({ tag: 'ventas' })).toEqual(['Uno']);
+      expect(await titles({ tag: 'LIDERAZGO' })).toEqual(['Dos']);
+      expect(await titles({ search: 'lider' })).toEqual(['Dos']); // la búsqueda también mira etiquetas
+      expect(await titles({ tag: 'inexistente' })).toEqual([]);
+      const other = await request(app.getHttpServer()).get('/api/summaries?tag=ventas').set(as(USER_B));
+      expect(other.body).toEqual([]);
+    });
+
+    it('valida las etiquetas', async () => {
+      const s = await createReady(DEFAULT_USER_ID);
+      const bad = [
+        { tags: Array.from({ length: 11 }, (_, i) => `t${i}`) },
+        { tags: ['x'.repeat(51)] },
+        { tags: 'ventas' },
+        { tags: [1, 2] },
+      ];
+      for (const body of bad) {
+        const res = await patch(s.id, body);
+        expect({ body, status: res.status }).toEqual({ body, status: 400 });
+      }
+      const create = await createSummary(DEFAULT_USER_ID, { tags: Array.from({ length: 11 }, (_, i) => `t${i}`) });
+      expect(create.status).toBe(400);
+    });
+  });
+
+  describe('favoritos y filtros de biblioteca', () => {
+    const fav = (id: string, method: 'put' | 'delete', userId = DEFAULT_USER_ID) =>
+      request(app.getHttpServer())[method](`/api/summaries/${id}/favorite`).set(as(userId));
+    const titles = async (query: Record<string, string>, userId = DEFAULT_USER_ID) =>
+      (await request(app.getHttpServer()).get('/api/summaries').query(query).set(as(userId))).body.map(
+        (s: any) => s.title,
+      );
+
+    it('marca y desmarca favoritos (idempotente) y filtra por ellos', async () => {
+      const a = await createReady(DEFAULT_USER_ID, { title: 'A' });
+      await createReady(DEFAULT_USER_ID, { title: 'B' });
+      expect(a.favorite).toBe(false);
+
+      expect((await fav(a.id, 'put')).body).toEqual({ favorite: true });
+      await fav(a.id, 'put').then((r) => expect(r.status).toBe(200));
+      expect(await titles({ favorite: 'true' })).toEqual(['A']);
+      const one = await request(app.getHttpServer()).get(`/api/summaries/${a.id}`).set(as(DEFAULT_USER_ID));
+      expect(one.body.favorite).toBe(true);
+
+      await fav(a.id, 'delete').then((r) => expect(r.status).toBe(204));
+      await fav(a.id, 'delete').then((r) => expect(r.status).toBe(204));
+      expect(await titles({ favorite: 'true' })).toEqual([]);
+    });
+
+    it('no permite favoritos sobre audios ajenos', async () => {
+      const a = await createReady(DEFAULT_USER_ID);
+      await fav(a.id, 'put', USER_B).then((r) => expect(r.status).toBe(404));
+      await fav(a.id, 'delete', USER_B).then((r) => expect(r.status).toBe(404));
+      expect(await prisma.favorite.count()).toBe(0);
+    });
+
+    it('filtra por terminados y pendientes', async () => {
+      const done = await createReady(DEFAULT_USER_ID, { title: 'Terminado' });
+      await createReady(DEFAULT_USER_ID, { title: 'Pendiente' });
+      await prisma.playbackProgress.create({
+        data: { userId: DEFAULT_USER_ID, summaryId: done.id, positionSeconds: 3, completed: true },
+      });
+      expect(await titles({ status: 'finished' })).toEqual(['Terminado']);
+      expect(await titles({ status: 'unfinished' })).toEqual(['Pendiente']);
+    });
+
+    it('ordena por última escucha y deja al final lo que nunca se escuchó', async () => {
+      const a = await createReady(DEFAULT_USER_ID, { title: 'A' });
+      const b = await createReady(DEFAULT_USER_ID, { title: 'B' });
+      await createReady(DEFAULT_USER_ID, { title: 'C sin escuchar' });
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: a.id, positionSeconds: 1 } });
+      await new Promise((r) => setTimeout(r, 1100));
+      await prisma.playbackProgress.create({ data: { userId: DEFAULT_USER_ID, summaryId: b.id, positionSeconds: 1 } });
+      expect(await titles({ sort: 'listened' })).toEqual(['B', 'A', 'C sin escuchar']);
+    });
+
+    it('rechaza filtros inválidos', async () => {
+      for (const query of ['favorite=false', 'status=otro', 'sort=otro']) {
+        await request(app.getHttpServer()).get(`/api/summaries?${query}`).set(as(DEFAULT_USER_ID)).expect(400);
+      }
     });
   });
 

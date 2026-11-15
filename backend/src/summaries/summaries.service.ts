@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { TagsService } from '../tags/tags.service';
 import {
   AUDIO_TYPES,
   CreateSummaryDto,
@@ -17,22 +18,35 @@ const ORDER_BY: Record<SortOption, Prisma.SummaryOrderByWithRelationInput[]> = {
   recent: [{ createdAt: 'desc' }],
   title: [{ title: 'asc' }, { createdAt: 'desc' }],
   duration: [{ durationSeconds: 'desc' }, { createdAt: 'desc' }],
+  // "listened" se ordena en memoria (la fecha de escucha está en otra tabla); este es el desempate.
+  listened: [{ createdAt: 'desc' }],
 };
 
 /** Fracción de la duración a partir de la cual el audio se considera terminado. */
 const COMPLETE_RATIO = 0.95;
 
-const withProgress = (userId: string) => ({ category: true, progress: { where: { userId } } });
+const withRelations = (userId: string) => ({
+  category: true,
+  progress: { where: { userId } },
+  tags: { include: { tag: true } },
+  favorites: { where: { userId } },
+});
 
-/** Cada fila trae el progreso del usuario como lista de 0 o 1 elementos; se expone como objeto o null. */
-function present<T extends { progress: { positionSeconds: number; completed: boolean; updatedAt: Date }[] }>(
-  summary: T,
-) {
-  const { progress, ...rest } = summary;
+interface RelationRows {
+  progress: { positionSeconds: number; completed: boolean; updatedAt: Date }[];
+  tags: { tag: { name: string } }[];
+  favorites: unknown[];
+}
+
+/** Aplana las relaciones: progreso como objeto o null, etiquetas como nombres y favorito como booleano. */
+function present<T extends RelationRows>(summary: T) {
+  const { progress, tags, favorites, ...rest } = summary;
   const row = progress[0];
   return {
     ...rest,
     progress: row ? { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt } : null,
+    tags: tags.map((t) => t.tag.name).sort((a, b) => a.localeCompare(b, 'es')),
+    favorite: favorites.length > 0,
   };
 }
 
@@ -43,31 +57,52 @@ export class SummariesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly tags: TagsService,
   ) {}
 
-  list(userId: string, { search, categoryId, sort }: ListSummariesQuery) {
+  async list(userId: string, { search, categoryId, tag, favorite, status, sort }: ListSummariesQuery) {
     const where: Prisma.SummaryWhereInput = { userId, status: SummaryStatus.READY };
     if (categoryId) where.categoryId = categoryId;
+    // La colación utf8mb4 de MySQL ignora mayúsculas y acentos, también en la igualdad de etiquetas.
+    if (tag) where.tags = { some: { tag: { name: tag } } };
+    if (favorite) where.favorites = { some: { userId } };
+    if (status === 'finished') where.progress = { some: { userId, completed: true } };
+    if (status === 'unfinished') where.NOT = { progress: { some: { userId, completed: true } } };
     if (search) {
-      // La colación utf8mb4 de MySQL ignora mayúsculas y acentos. Prisma no escapa
-      // los comodines de LIKE, así que se escapan aquí para buscar texto literal.
+      // Prisma no escapa los comodines de LIKE: se escapan aquí para buscar texto literal.
       const term = search.replace(/[\\%_]/g, '\\$&');
       where.OR = [
         { title: { contains: term } },
         { author: { contains: term } },
         { summaryTitle: { contains: term } },
+        { tags: { some: { tag: { name: { contains: term } } } } },
       ];
     }
-    return this.prisma.summary
-      .findMany({ where, include: withProgress(userId), orderBy: ORDER_BY[sort ?? 'recent'] })
-      .then((rows) => rows.map(present));
+    const rows = (
+      await this.prisma.summary.findMany({
+        where,
+        include: withRelations(userId),
+        orderBy: ORDER_BY[sort ?? 'recent'],
+      })
+    ).map(present);
+
+    if (sort === 'listened') {
+      // Lo último que escuchaste primero; lo que nunca se escuchó, al final (más reciente antes).
+      const listenedAt = (s: (typeof rows)[number]) => s.progress?.updatedAt.getTime() ?? -1;
+      rows.sort((a, b) => listenedAt(b) - listenedAt(a));
+    }
+    return rows;
   }
 
   /** Un audio ajeno se trata igual que uno inexistente (404) para no revelar que existe. */
   async get(id: string, userId: string) {
-    const row = await this.prisma.summary.findFirst({ where: { id, userId }, include: withProgress(userId) });
+    return this.fillMissingDuration(await this.load(id, userId));
+  }
+
+  private async load(id: string, userId: string) {
+    const row = await this.prisma.summary.findFirst({ where: { id, userId }, include: withRelations(userId) });
     if (!row) throw new NotFoundException('Resumen no encontrado');
-    return this.fillMissingDuration(present(row));
+    return present(row);
   }
 
   /** Audios anteriores a este campo: la duración se calcula al abrirlos y se guarda (mejor esfuerzo). */
@@ -111,10 +146,10 @@ export class SummariesService {
         sizeBytes: dto.sizeBytes,
         contentType: dto.contentType,
       },
-      include: withProgress(userId),
     });
+    if (dto.tags?.length) await this.tags.replaceForSummary(summary.id, userId, dto.tags);
     const uploadUrl = await this.storage.createUploadUrl(s3Key, dto.contentType, dto.sizeBytes);
-    return { summary: present(summary), upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };
+    return { summary: await this.load(summary.id, userId), upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };
   }
 
   async complete(id: string, userId: string) {
@@ -132,18 +167,17 @@ export class SummariesService {
       throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
     }
 
-    const updated = await this.prisma.summary.update({
+    await this.prisma.summary.update({
       where: { id: summary.id },
       data: { status: SummaryStatus.READY, durationSeconds },
-      include: withProgress(userId),
     });
-    return present(updated);
+    return this.load(summary.id, userId);
   }
 
   async update(id: string, userId: string, dto: UpdateSummaryDto) {
     await this.get(id, userId);
     if (dto.categoryId) await this.assertCategory(dto.categoryId);
-    const updated = await this.prisma.summary.update({
+    await this.prisma.summary.update({
       where: { id },
       data: {
         title: dto.title,
@@ -153,9 +187,23 @@ export class SummariesService {
         description: emptyToNull(dto.description),
         categoryId: dto.categoryId,
       },
-      include: withProgress(userId),
     });
-    return present(updated);
+    if (dto.tags !== undefined) await this.tags.replaceForSummary(id, userId, dto.tags);
+    return this.load(id, userId);
+  }
+
+  async setFavorite(id: string, userId: string, favorite: boolean) {
+    await this.get(id, userId);
+    if (favorite) {
+      await this.prisma.favorite.upsert({
+        where: { userId_summaryId: { userId, summaryId: id } },
+        update: {},
+        create: { userId, summaryId: id },
+      });
+    } else {
+      await this.prisma.favorite.deleteMany({ where: { userId, summaryId: id } });
+    }
+    return { favorite };
   }
 
   async saveProgress(id: string, userId: string, dto: SaveProgressDto) {

@@ -6,7 +6,7 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { getPlaybackUrl, getSummary, resetProgress, saveProgress } from '../api'
+import { getPlaybackUrl, getSummary, resetProgress, saveProgress, setFavorite } from '../api'
 import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
@@ -20,6 +20,7 @@ export default function SummaryDetail() {
   const [progress, setProgress] = useState<Progress | null>(null)
   const [startAt, setStartAt] = useState(0)
   const [playerKey, setPlayerKey] = useState(0)
+  const [favorite, setFavoriteState] = useState(false)
   const refreshed = useRef(false)
   // Durante "Reiniciar" se ignoran los guardados del reproductor que se desmonta.
   const suppressSave = useRef(false)
@@ -36,6 +37,7 @@ export default function SummaryDetail() {
         setSummary(s)
         setUrl(u)
         setProgress(s.progress)
+        setFavoriteState(s.favorite)
         // Un audio terminado vuelve a empezar desde el principio.
         setStartAt(s.progress && !s.progress.completed ? s.progress.positionSeconds : 0)
       })
@@ -68,6 +70,17 @@ export default function SummaryDetail() {
     try {
       setProgress(await saveProgress(id, { completed }))
     } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function toggleFavorite() {
+    const value = !favorite
+    setFavoriteState(value)
+    try {
+      await setFavorite(id, value)
+    } catch (e) {
+      setFavoriteState(!value)
       setError((e as Error).message)
     }
   }
@@ -112,6 +125,20 @@ export default function SummaryDetail() {
           )}
           {summary.description && <Typography>{summary.description}</Typography>}
 
+          {summary.tags.length > 0 && (
+            <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap' }}>
+              {summary.tags.map((name) => (
+                <Chip
+                  key={name}
+                  label={name}
+                  size="small"
+                  variant="outlined"
+                  onClick={() => navigate(`/?etiqueta=${encodeURIComponent(name)}`)}
+                />
+              ))}
+            </Stack>
+          )}
+
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             {progress?.completed && <Chip label="Terminado" color="success" size="small" />}
             {startAt > 0 && (
@@ -135,6 +162,9 @@ export default function SummaryDetail() {
           )}
 
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            <Button onClick={toggleFavorite} aria-pressed={favorite} color={favorite ? 'warning' : 'primary'}>
+              {favorite ? '★ Favorito' : '☆ Añadir a favoritos'}
+            </Button>
             <Button onClick={() => setCompleted(!progress?.completed)}>
               {progress?.completed ? 'Marcar como pendiente' : 'Marcar como terminado'}
             </Button>

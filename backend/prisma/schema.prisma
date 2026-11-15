@@ -22,6 +22,8 @@ model User {
   createdAt    DateTime           @default(now()) @map("created_at")
   summaries    Summary[]
   progress     PlaybackProgress[]
+  tags         Tag[]
+  favorites    Favorite[]
 
   @@map("users")
 }
@@ -41,6 +43,8 @@ model Summary {
   userId           String             @default("00000000-0000-4000-8000-000000000001") @map("user_id") @db.VarChar(36)
   user             User               @relation(fields: [userId], references: [id])
   progress         PlaybackProgress[]
+  tags             SummaryTag[]
+  favorites        Favorite[]
   title            String             @db.VarChar(200)
   author           String             @db.VarChar(200)
   summaryTitle     String?            @map("summary_title") @db.VarChar(200)
@@ -76,4 +80,41 @@ model PlaybackProgress {
   @@id([userId, summaryId])
   @@index([userId, updatedAt])
   @@map("playback_progress")
+}
+
+// Etiquetas libres de cada usuario. La colación utf8mb4 ignora mayúsculas y acentos, así que
+// "Ventas" y "ventas" son la misma etiqueta (se conserva la primera grafía).
+model Tag {
+  id        String       @id @default(uuid()) @db.VarChar(36)
+  userId    String       @map("user_id") @db.VarChar(36)
+  name      String       @db.VarChar(50)
+  createdAt DateTime     @default(now()) @map("created_at")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summaries SummaryTag[]
+
+  @@unique([userId, name])
+  @@map("tags")
+}
+
+model SummaryTag {
+  summaryId String  @map("summary_id") @db.VarChar(36)
+  tagId     String  @map("tag_id") @db.VarChar(36)
+  summary   Summary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([summaryId, tagId])
+  @@index([tagId])
+  @@map("summary_tags")
+}
+
+model Favorite {
+  userId    String   @map("user_id") @db.VarChar(36)
+  summaryId String   @map("summary_id") @db.VarChar(36)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary   Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, summaryId])
+  @@index([summaryId])
+  @@map("favorites")
 }

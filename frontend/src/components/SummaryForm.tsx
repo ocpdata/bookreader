@@ -1,15 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, updateSummary } from '../api'
+import { MAX_AUDIO_BYTES, audioContentType, createSummary, getSummary, listTags, updateSummary } from '../api'
 import { formatDuration } from '../format'
-import type { Category, Summary } from '../types'
+import type { Category, Summary, TagSuggestion } from '../types'
+
+const MAX_TAGS = 10
 
 interface Props {
   categories: Category[]
@@ -27,6 +30,9 @@ export default function SummaryForm({ categories }: Props) {
   const [narrator, setNarrator] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [description, setDescription] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [tagQuery, setTagQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<TagSuggestion[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(editing)
   const [saving, setSaving] = useState(false)
@@ -45,6 +51,7 @@ export default function SummaryForm({ categories }: Props) {
         setNarrator(s.narrator ?? '')
         setCategoryId(s.categoryId)
         setDescription(s.description ?? '')
+        setTags(s.tags)
       })
       .catch((e: Error) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false))
@@ -52,6 +59,20 @@ export default function SummaryForm({ categories }: Props) {
       cancelled = true
     }
   }, [id])
+
+  // Sugerencias: etiquetas ya usadas que coinciden con lo que se escribe.
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      listTags(tagQuery.trim())
+        .then((found) => !cancelled && setSuggestions(found))
+        .catch(() => undefined)
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [tagQuery])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -62,7 +83,7 @@ export default function SummaryForm({ categories }: Props) {
       if (file.size > MAX_AUDIO_BYTES) return setError('El archivo supera el máximo de 200 MB')
     }
 
-    const fields = { title, author, summaryTitle, narrator, description, categoryId }
+    const fields = { title, author, summaryTitle, narrator, description, categoryId, tags }
     setSaving(true)
     try {
       if (id) await updateSummary(id, fields)
@@ -108,6 +129,26 @@ export default function SummaryForm({ categories }: Props) {
             </MenuItem>
           ))}
         </TextField>
+        <Autocomplete
+          multiple
+          freeSolo
+          autoSelect
+          options={suggestions.map((t) => t.name).filter((name) => !tags.some((t) => t.toLowerCase() === name.toLowerCase()))}
+          value={tags}
+          onChange={(_, value) => {
+            const clean = value.map((v) => v.trim().replace(/\s+/g, ' ')).filter(Boolean)
+            const unique = clean.filter((t, i) => clean.findIndex((o) => o.toLowerCase() === t.toLowerCase()) === i)
+            if (unique.length <= MAX_TAGS) setTags(unique)
+          }}
+          onInputChange={(_, value) => setTagQuery(value)}
+          renderInput={(inputParams) => (
+            <TextField
+              {...inputParams}
+              label="Etiquetas (opcional)"
+              helperText={`Escribe y pulsa Enter para añadir. Hasta ${MAX_TAGS}; se sugieren las que ya usaste.`}
+            />
+          )}
+        />
         <TextField
           label="Descripción (opcional)"
           value={description}

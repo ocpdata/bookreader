@@ -1,5 +1,19 @@
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
+import { MAX_TAG_LENGTH, MAX_TAGS_PER_SUMMARY } from '../tags/tags.service';
 
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
 
@@ -10,6 +24,14 @@ export const AUDIO_TYPES: Record<string, string[]> = {
 };
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+/** Recorta y colapsa espacios de cada etiqueta; descarta las que quedan vacías. */
+const normalizeTags = ({ value }: { value: unknown }) =>
+  Array.isArray(value)
+    ? value
+        .map((tag) => (typeof tag === 'string' ? tag.trim().replace(/\s+/g, ' ') : tag))
+        .filter((tag) => tag !== '')
+    : value;
 
 export class UpdateSummaryDto {
   @IsOptional()
@@ -47,6 +69,14 @@ export class UpdateSummaryDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  @IsOptional()
+  @Transform(normalizeTags)
+  @IsArray()
+  @ArrayMaxSize(MAX_TAGS_PER_SUMMARY)
+  @IsString({ each: true })
+  @MaxLength(MAX_TAG_LENGTH, { each: true })
+  tags?: string[];
 }
 
 export class CreateSummaryDto {
@@ -83,6 +113,14 @@ export class CreateSummaryDto {
   @IsUUID()
   categoryId!: string;
 
+  @IsOptional()
+  @Transform(normalizeTags)
+  @IsArray()
+  @ArrayMaxSize(MAX_TAGS_PER_SUMMARY)
+  @IsString({ each: true })
+  @MaxLength(MAX_TAG_LENGTH, { each: true })
+  tags?: string[];
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
@@ -97,7 +135,7 @@ export class CreateSummaryDto {
   sizeBytes!: number;
 }
 
-export const SORT_OPTIONS = ['recent', 'title', 'duration'] as const;
+export const SORT_OPTIONS = ['recent', 'title', 'duration', 'listened'] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
 
 export class ListSummariesQuery {
@@ -109,6 +147,20 @@ export class ListSummariesQuery {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(MAX_TAG_LENGTH)
+  tag?: string;
+
+  @IsOptional()
+  @IsIn(['true'])
+  favorite?: 'true';
+
+  @IsOptional()
+  @IsIn(['finished', 'unfinished'])
+  status?: 'finished' | 'unfinished';
 
   @IsOptional()
   @IsIn(SORT_OPTIONS as unknown as string[])

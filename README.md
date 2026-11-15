@@ -45,14 +45,16 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | Método | Endpoint | Función |
 | --- | --- | --- |
 | GET | `/api/categories` | Listar categorías |
-| GET | `/api/summaries?search=&categoryId=&sort=` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos; `sort` = `recent`, `title` o `duration`) |
+| GET | `/api/summaries` | Listar/buscar los audios del usuario (solo `READY`; sin distinguir acentos ni mayúsculas). Parámetros: `search` (título, autor, título del resumen o etiqueta), `categoryId`, `tag`, `favorite=true`, `status=finished\|unfinished`, `sort=recent\|title\|duration\|listened` |
 | GET | `/api/summaries/:id` | Consultar un resumen |
 | POST | `/api/summaries` | Crear registro `PENDING` y obtener URL de carga |
 | POST | `/api/summaries/:id/complete` | Verificar el objeto en S3, leer su duración real (rechaza archivos que no son audio) y marcar `READY` |
-| PATCH | `/api/summaries/:id` | Editar título, autor, título del resumen, narrador, categoría y descripción |
+| PATCH | `/api/summaries/:id` | Editar título, autor, título del resumen, narrador, categoría, descripción y etiquetas (`tags`; `[]` las quita todas) |
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
 | PUT | `/api/summaries/:id/progress` | Guardar la posición (`positionSeconds`) y/o `completed` |
 | DELETE | `/api/summaries/:id/progress` | Reiniciar: borra el progreso |
+| PUT / DELETE | `/api/summaries/:id/favorite` | Marcar / quitar de favoritos |
+| GET | `/api/tags?query=` | Etiquetas del usuario con su número de audios (para autocompletar y filtrar) |
 | GET | `/api/health` | Estado de la API y de la base de datos |
 
 Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `audios/{userId}/{uuid}/audio.ext`.
@@ -60,6 +62,10 @@ Formatos aceptados: MP3 y M4A, hasta 200 MB. Cada carga usa una clave nueva `aud
 ## Progreso de reproducción
 
 Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y la ficha la devuelven en `progress`. El reproductor guarda cada 10 s mientras suena y al pausar, saltar, terminar o salir de la pantalla. Reglas: al reabrir retoma desde la posición guardada, salvo que el audio esté terminado (entonces empieza de cero); se marca **terminado** al llegar al 95 % o al final, se mantiene hasta que se cambie a mano ("Marcar como pendiente") y "Reiniciar" borra el progreso.
+
+## Etiquetas y favoritos
+
+Las etiquetas son libres y de cada usuario (hasta 10 por audio, 50 caracteres). MySQL las compara sin distinguir mayúsculas ni acentos, así que "Ventas" y "ventas" son la misma etiqueta y se conserva la primera grafía. Al quitar la última referencia a una etiqueta, esta desaparece de las sugerencias. Los favoritos también son por usuario. La biblioteca filtra por etiqueta, favoritos, estado (terminados o pendientes), categoría y texto, y ordena por fecha, título, duración o última escucha; filtros y orden viven en la URL.
 
 ## Usuarios
 

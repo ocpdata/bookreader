@@ -57,4 +57,15 @@ export class SummariesController {
   resetProgress(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.summaries.resetProgress(id, userId);
   }
+
+  @Put(':id/favorite')
+  setFavorite(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.summaries.setFavorite(id, userId, true);
+  }
+
+  @Delete(':id/favorite')
+  @HttpCode(204)
+  async removeFavorite(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.summaries.setFavorite(id, userId, false);
+  }
 }
