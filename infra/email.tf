@@ -8,7 +8,6 @@ data "aws_caller_identity" "current" {}
 locals {
   mail_enabled   = var.app_domain != ""
   mail_from      = "${var.mail_from_local_part}@${var.app_domain}"
-  ses_identity   = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${var.app_domain}"
   ses_config_set = "${local.name}-correo"
 }
 
@@ -41,12 +40,23 @@ resource "aws_sesv2_email_identity" "app" {
   }
 }
 
-# La VM solo puede enviar correo desde la identidad y la configuración de BookReader.
+# La VM solo puede enviar correo desde el remitente de BookReader (condición ses:FromAddress). En el modo de
+# pruebas de SES, además de la identidad remitente se evalúan las identidades destinatarias verificadas, por eso
+# el recurso es identity/*: lo que limita el envío es el remitente, que no puede ser otro.
 data "aws_iam_policy_document" "ses_send" {
   statement {
-    sid       = "EnviarCorreo"
-    actions   = ["ses:SendEmail"]
-    resources = [local.ses_identity, "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${local.ses_config_set}"]
+    sid     = "EnviarCorreo"
+    actions = ["ses:SendEmail"]
+    resources = [
+      "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*",
+      "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${local.ses_config_set}",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ses:FromAddress"
+      values   = [local.mail_from]
+    }
   }
 }
 
