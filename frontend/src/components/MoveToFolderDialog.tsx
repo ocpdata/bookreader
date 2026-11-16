@@ -5,6 +5,8 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 import { moveSummaries } from '../api'
 import type { Folder, Summary } from '../types'
 import FolderSelect from './FolderSelect'
@@ -42,13 +44,14 @@ export default function MoveToFolderDialog({ summary, folders, onMoved, onClose 
   return (
     <Dialog open={summary !== null} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs" aria-labelledby="move-title">
       <DialogTitle id="move-title">Mover a una carpeta</DialogTitle>
-      <DialogContent sx={{ pt: 1 }}>
-        <FolderSelect folders={folders} value={folderId} onChange={setFolderId} label={`Destino de «${summary?.title ?? ''}»`} autoFocus />
-        {error && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
-          </Alert>
-        )}
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+            {summary?.title}
+          </Typography>
+          <FolderSelect folders={folders} value={folderId} onChange={setFolderId} label="Carpeta de destino" autoFocus />
+          {error && <Alert severity="error">{error}</Alert>}
+        </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>

@@ -62,9 +62,16 @@ export class QuotaService {
    * Ejecuta `create` solo si el audio nuevo cabe en la cuota. Las altas de un usuario se serializan con un
    * bloqueo sobre su fila: dos cargas simultáneas no pueden pasar la comprobación a la vez y excederla.
    */
-  async reserve<T>(userId: string, addBytes: number, create: (tx: Tx) => Promise<T>): Promise<T> {
+  async reserve<T>(
+    userId: string,
+    addBytes: number,
+    create: (tx: Tx) => Promise<T>,
+    findExisting?: (tx: Tx) => Promise<T | null>,
+  ): Promise<T> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      const existing = await findExisting?.(tx);
+      if (existing) return existing;
       const [limits, used] = await Promise.all([this.limits(tx, userId), this.totals(tx, userId)]);
       if (used.audios >= limits.maxAudios) {
         throw new HttpException(

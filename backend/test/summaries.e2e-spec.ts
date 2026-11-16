@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import { createHash, randomUUID } from 'node:crypto';
 import sharp = require('sharp');
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -8,6 +9,7 @@ import { configureApp } from '../src/app.setup';
 import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
 import { PurgeService } from '../src/summaries/purge.service';
+import { HashBackfillService } from '../src/summaries/hash-backfill.service';
 import { FakeStorage, fixture } from './fake-storage';
 import { sharedCategory } from './shared-category';
 
@@ -18,6 +20,7 @@ describe('Summaries (e2e)', () => {
   let prisma: PrismaClient;
   let storage: FakeStorage;
   let purge: PurgeService;
+  let backfill: HashBackfillService;
   let categoryId: string;
 
   const as = (userId: string | undefined) => ({ 'x-test-user': userId ?? '' });
@@ -63,6 +66,7 @@ describe('Summaries (e2e)', () => {
       .useValue({ resolve: (req: any) => req.headers['x-test-user'] || undefined })
       .compile();
     purge = module.get(PurgeService);
+    backfill = module.get(HashBackfillService);
     app = module.createNestApplication();
     configureApp(app);
     await app.init();
@@ -174,6 +178,142 @@ describe('Summaries (e2e)', () => {
     expect(res.body.summary.s3Key).toMatch(new RegExp(`^audios/${DEFAULT_USER_ID}/[0-9a-f-]{36}/audio\\.mp3$`));
     expect(res.body.summary).toMatchObject({ status: 'PENDING', summaryTitle: 'Resumen en 10 min', narrator: 'Ana' });
     expect(res.body.upload.url).toContain(res.body.summary.s3Key);
+  });
+
+  it('recupera la misma reserva al reintentar un identificador de carga', async () => {
+    const uploadRequestId = randomUUID();
+    const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const results = await Promise.all([
+      createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 }),
+      createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual([201, 201]);
+    expect(results[0].body.summary.id).toBe(results[1].body.summary.id);
+    expect(results[0].body.upload.headers['x-amz-checksum-sha256']).toBe(Buffer.from(requestedSha256, 'hex').toString('base64'));
+    expect(await prisma.summary.count({ where: { userId: DEFAULT_USER_ID } })).toBe(1);
+    await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256, title: 'Otro' }).then((result) => expect(result.status).toBe(409));
+    const otherUser = await createSummary(USER_B, { uploadRequestId, requestedSha256 });
+    expect(otherUser.status).toBe(201);
+    expect(otherUser.body.summary.id).not.toBe(results[0].body.summary.id);
+  });
+
+  it('no completa una carga recuperable si los bytes no corresponden a su huella', async () => {
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: '0'.repeat(64) });
+    const id = created.body.summary.id;
+    storage.objects.set(created.body.summary.s3Key, fixture('sample.mp3'));
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/complete`).set(as(DEFAULT_USER_ID)).expect(400);
+    expect((await prisma.summary.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING');
+  });
+
+  it('compara huellas verificadas y metadatos solo dentro de la cuenta, incluida la papelera', async () => {
+    const ready = await createReady(DEFAULT_USER_ID);
+    await createReady(USER_B);
+    await request(app.getHttpServer()).post(`/api/summaries/${ready.id}/cancel-upload`).set(as(DEFAULT_USER_ID)).expect(409);
+    await request(app.getHttpServer()).delete(`/api/summaries/${ready.id}`).set(as(DEFAULT_USER_ID)).expect(204);
+    const hash = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const result = await request(app.getHttpServer())
+      .get('/api/summaries/duplicates')
+      .query({ sha256: hash, title: ready.title, author: ready.author })
+      .set(as(DEFAULT_USER_ID)).expect(200);
+    expect(result.body).toMatchObject({ unchecked: 0, matches: [{ id: ready.id, exact: true, inTrash: true }] });
+    const metadata = await request(app.getHttpServer())
+      .get('/api/summaries/duplicates')
+      .query({ sha256: '0'.repeat(64), title: ready.title, author: ready.author })
+      .set(as(DEFAULT_USER_ID)).expect(200);
+    expect(metadata.body.matches).toMatchObject([{ id: ready.id, exact: false }]);
+  });
+
+  it('excluye el intento propio de las coincidencias sin ocultar registros anteriores', async () => {
+    const ready = await createReady(DEFAULT_USER_ID);
+    const uploadRequestId = randomUUID();
+    const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const pending = await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 });
+    const result = await request(app.getHttpServer()).get('/api/summaries/duplicates')
+      .query({ sha256: requestedSha256, title: ready.title, author: ready.author, uploadRequestId })
+      .set(as(DEFAULT_USER_ID)).expect(200);
+    expect(result.body.matches).toMatchObject([{ id: ready.id, exact: true }]);
+    expect(result.body.matches.some((match: { id: string }) => match.id === pending.body.summary.id)).toBe(false);
+  });
+
+  it('advierte sobre otra carga pendiente con la misma huella sin afirmar que ya se verificó', async () => {
+    const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const pending = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256 });
+    const result = await request(app.getHttpServer()).get('/api/summaries/duplicates')
+      .query({ sha256: requestedSha256, title: 'Otro', author: 'Distinto' })
+      .set(as(DEFAULT_USER_ID)).expect(200);
+    expect(result.body.matches).toMatchObject([{ id: pending.body.summary.id, exact: false, pending: true }]);
+  });
+
+  it('prioriza coincidencias exactas aunque haya más de 50 coincidencias por título', async () => {
+    const ready = await createReady(DEFAULT_USER_ID);
+    await prisma.summary.createMany({
+      data: Array.from({ length: 51 }, (_, index) => ({
+        userId: DEFAULT_USER_ID, title: ready.title, author: ready.author, categoryId,
+        s3Key: `audios/test-${index}`, originalFilename: 'otro.mp3', sizeBytes: 1,
+        contentType: 'audio/mpeg', status: 'READY' as const,
+      })),
+    });
+    const hash = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const result = await request(app.getHttpServer()).get('/api/summaries/duplicates')
+      .query({ sha256: hash, title: ready.title, author: ready.author }).set(as(DEFAULT_USER_ID)).expect(200);
+    expect(result.body.truncated).toBe(true);
+    expect(result.body.matches).toHaveLength(50);
+    expect(result.body.matches[0]).toMatchObject({ id: ready.id, exact: true });
+  });
+
+  it('no vuelve a completar ni renovar una carga cancelada y la limpia tras la espera', async () => {
+    const uploadRequestId = randomUUID();
+    const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 });
+    const id = created.body.summary.id;
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/cancel-upload`).set(as(USER_B)).expect(404);
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/cancel-upload`).set(as(DEFAULT_USER_ID)).expect(204);
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/complete`).set(as(DEFAULT_USER_ID)).expect(409);
+    expect((await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 })).status).toBe(409);
+    const old = new Date(Date.now() - 26 * 60 * 60 * 1000);
+    await prisma.summary.update({ where: { id }, data: { createdAt: old, uploadIssuedAt: new Date() } });
+    await purge.run(new Date());
+    expect(await prisma.summary.findUnique({ where: { id } })).not.toBeNull();
+    await prisma.summary.update({ where: { id }, data: { uploadIssuedAt: old } });
+    await purge.run(new Date());
+    expect(await prisma.summary.findUnique({ where: { id } })).toBeNull();
+  });
+
+  it('completa gradualmente las huellas faltantes de audios existentes', async () => {
+    const ready = await createReady(DEFAULT_USER_ID);
+    await prisma.summary.update({ where: { id: ready.id }, data: { audioSha256: null } });
+    const hash = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const before = await request(app.getHttpServer()).get('/api/summaries/duplicates').query({ sha256: hash }).set(as(DEFAULT_USER_ID)).expect(200);
+    expect(before.body).toMatchObject({ unchecked: 1, matches: [] });
+    await backfill.run();
+    const after = await request(app.getHttpServer()).get('/api/summaries/duplicates').query({ sha256: hash }).set(as(DEFAULT_USER_ID)).expect(200);
+    expect(after.body).toMatchObject({ unchecked: 0, matches: [{ id: ready.id, exact: true }] });
+  });
+
+  it('no renueva ni completa un pendiente mientras se está purgando', async () => {
+    const uploadRequestId = randomUUID();
+    const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 });
+    const id = created.body.summary.id;
+    const old = new Date(Date.now() - 26 * 60 * 60 * 1000);
+    await prisma.summary.update({ where: { id }, data: { createdAt: old, uploadIssuedAt: old } });
+    const originalDelete = storage.deleteObject;
+    let entered!: () => void;
+    let release!: () => void;
+    const enteredDelete = new Promise<void>((resolve) => { entered = resolve; });
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    storage.deleteObject = async (key) => { entered(); await wait; await originalDelete(key); };
+    const running = purge.run();
+    try {
+      await enteredDelete;
+      expect((await createSummary(DEFAULT_USER_ID, { uploadRequestId, requestedSha256 })).status).toBe(409);
+      await request(app.getHttpServer()).post(`/api/summaries/${id}/complete`).set(as(DEFAULT_USER_ID)).expect(409);
+    } finally {
+      release();
+      await running;
+      storage.deleteObject = originalDelete;
+    }
+    expect(await prisma.summary.findUnique({ where: { id } })).toBeNull();
   });
 
   it('completa con duración real del MP3 y del M4A', async () => {
@@ -886,6 +1026,18 @@ describe('Summaries (e2e)', () => {
       expect(await prisma.summary.count({ where: { userId: A } })).toBe(2);
       // La cuota es de cada cuenta.
       expect((await createSummary(USER_B)).status).toBe(201);
+    });
+
+    it('permite recuperar una reserva existente aunque ya se haya agotado la cuota', async () => {
+      await setQuota({ maxAudios: 1 });
+      const uploadRequestId = randomUUID();
+      const requestedSha256 = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+      const first = await createSummary(A, { uploadRequestId, requestedSha256 });
+      expect(first.status).toBe(201);
+      const retry = await createSummary(A, { uploadRequestId, requestedSha256 });
+      expect(retry.status).toBe(201);
+      expect(retry.body.summary.id).toBe(first.body.summary.id);
+      expect((await createSummary(A)).status).toBe(413);
     });
 
     it('cuentan las cargas pendientes y la papelera; se libera al borrar de forma definitiva', async () => {

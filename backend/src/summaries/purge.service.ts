@@ -67,7 +67,12 @@ export class PurgeService implements OnModuleInit, OnModuleDestroy {
         take: PURGE_BATCH_SIZE,
       }),
       this.prisma.summary.findMany({
-        where: { status: SummaryStatus.PENDING, deletedAt: null, createdAt: { lt: pendingCutoff } },
+        where: {
+          status: SummaryStatus.PENDING,
+          deletedAt: null,
+          createdAt: { lt: pendingCutoff },
+          OR: [{ uploadIssuedAt: null }, { uploadIssuedAt: { lt: pendingCutoff } }],
+        },
         select: { id: true, s3Key: true, coverKey: true },
         orderBy: { createdAt: 'asc' },
         take: PURGE_BATCH_SIZE,
@@ -76,7 +81,24 @@ export class PurgeService implements OnModuleInit, OnModuleDestroy {
 
     const result: PurgeResult = { trashExpired: 0, pendingStale: 0, failed: 0 };
     for (const row of expired) (await this.destroy(row)) ? result.trashExpired++ : result.failed++;
-    for (const row of stale) (await this.destroy(row)) ? result.pendingStale++ : result.failed++;
+    for (const row of stale) {
+      const claimTime = new Date();
+      const claimed = await this.prisma.summary.updateMany({
+        where: {
+          id: row.id, status: SummaryStatus.PENDING, deletedAt: null, createdAt: { lt: pendingCutoff },
+          OR: [{ uploadIssuedAt: null }, { uploadIssuedAt: { lt: pendingCutoff } }],
+          AND: [{ OR: [{ purgeClaimedAt: null }, { purgeClaimedAt: { lt: new Date(now.getTime() - DAY_MS) } }] }],
+        },
+        data: { purgeClaimedAt: claimTime },
+      });
+      if (!claimed.count) continue;
+      if (await this.destroy(row)) {
+        result.pendingStale++;
+      } else {
+        result.failed++;
+        await this.prisma.summary.updateMany({ where: { id: row.id, purgeClaimedAt: claimTime }, data: { purgeClaimedAt: null } });
+      }
+    }
 
     if (result.trashExpired || result.pendingStale || result.failed) {
       this.logger.log(

@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
@@ -11,10 +11,12 @@ import { AudioInfo } from '../storage/storage.service';
 import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
 import { CategoriesService } from '../categories/categories.service';
+import { hashAudio } from './audio-hash';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
 import {
   AUDIO_TYPES,
   CreateSummaryDto,
+  DuplicateQueryDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -206,6 +208,9 @@ export class SummariesService {
   }
 
   async create(userId: string, dto: CreateSummaryDto) {
+    if (dto.uploadRequestId && !dto.requestedSha256) {
+      throw new BadRequestException('La carga recuperable requiere la huella del archivo');
+    }
     const ext = extname(dto.originalFilename).toLowerCase();
     if (!AUDIO_TYPES[dto.contentType].includes(ext)) {
       throw new BadRequestException('La extensión del archivo no coincide con su tipo (.mp3 o .m4a)');
@@ -215,11 +220,13 @@ export class SummariesService {
     // Clave nueva por carga y prefijada por usuario: una URL prefirmada nunca sobrescribe un audio.
     const s3Key = `audios/${userId}/${randomUUID()}/audio${ext}`;
     // La comprobación de la cuota y el alta van juntas, bajo el bloqueo del usuario.
+    let created = false;
     const summary = await this.quota.reserve(
       userId,
       dto.sizeBytes,
       async (tx) => {
         await this.categories.assertAccessible(tx, userId, dto.categoryId);
+        created = true;
         return tx.summary.create({
           data: {
             userId,
@@ -234,18 +241,96 @@ export class SummariesService {
             originalFilename: dto.originalFilename,
             sizeBytes: dto.sizeBytes,
             contentType: dto.contentType,
+            uploadRequestId: dto.uploadRequestId,
+            requestedSha256: dto.requestedSha256,
+            uploadIssuedAt: new Date(),
           },
         });
       },
+      dto.uploadRequestId ? async (tx) => {
+        const existing = await tx.summary.findUnique({
+          where: { userId_uploadRequestId: { userId, uploadRequestId: dto.uploadRequestId! } },
+        });
+        if (!existing) return null;
+        if (existing.cancelRequestedAt) throw new ConflictException('Esta carga fue cancelada');
+        if (existing.purgeClaimedAt) throw new ConflictException('Esta carga está siendo eliminada');
+        if (existing.deletedAt || existing.title !== dto.title || existing.author !== dto.author ||
+          existing.categoryId !== dto.categoryId || existing.folderId !== (dto.folderId ?? null) ||
+          existing.originalFilename !== dto.originalFilename || existing.contentType !== dto.contentType ||
+          existing.sizeBytes !== dto.sizeBytes || existing.requestedSha256 !== (dto.requestedSha256 ?? null) ||
+          existing.summaryTitle !== (dto.summaryTitle || null) ||
+          existing.narrator !== (dto.narrator || null) || existing.description !== (dto.description || null)) {
+          throw new ConflictException('El identificador de carga ya corresponde a otro resumen');
+        }
+        if (existing.status === SummaryStatus.PENDING) {
+          const renewed = await tx.summary.updateMany({
+            where: { id: existing.id, status: SummaryStatus.PENDING, cancelRequestedAt: null, purgeClaimedAt: null },
+            data: { uploadIssuedAt: new Date() },
+          });
+          if (!renewed.count) throw new ConflictException('Esta carga ya no está disponible');
+          return tx.summary.findUniqueOrThrow({ where: { id: existing.id } });
+        }
+        return existing;
+      } : undefined,
     );
-    if (dto.tags?.length) await this.tags.replaceForSummary(summary.id, userId, dto.tags);
-    const uploadUrl = await this.storage.createUploadUrl(s3Key, dto.contentType, dto.sizeBytes);
-    return { summary: await this.load(summary.id, userId), upload: { url: uploadUrl, headers: { 'Content-Type': dto.contentType } } };
+    if (created && dto.tags?.length) await this.tags.replaceForSummary(summary.id, userId, dto.tags);
+    if (summary.status === SummaryStatus.READY) return { summary: await this.load(summary.id, userId), upload: null };
+    const uploadUrl = await this.storage.createUploadUrl(summary.s3Key, dto.contentType, dto.sizeBytes, dto.requestedSha256);
+    const headers: Record<string, string> = { 'Content-Type': dto.contentType };
+    if (dto.requestedSha256) headers['x-amz-checksum-sha256'] = Buffer.from(dto.requestedSha256, 'hex').toString('base64');
+    return { summary: await this.load(summary.id, userId), upload: { url: uploadUrl, headers } };
+  }
+
+  async duplicates(userId: string, query: DuplicateQueryDto) {
+    const base: Prisma.SummaryWhereInput = {
+      userId, cancelRequestedAt: null,
+      ...(query.uploadRequestId ? {
+        OR: [{ uploadRequestId: null }, { uploadRequestId: { not: query.uploadRequestId } }],
+      } : {}),
+    };
+    const select = { id: true, title: true, author: true, audioSha256: true, deletedAt: true, status: true } as const;
+    const [hashMatches, titleMatches, unchecked] = await Promise.all([
+      query.sha256 ? this.prisma.summary.findMany({
+        where: { ...base, AND: [{ OR: [
+          { audioSha256: query.sha256, status: SummaryStatus.READY },
+          { requestedSha256: query.sha256, status: SummaryStatus.PENDING },
+        ] }] },
+        select, orderBy: { status: 'desc' }, take: 51,
+      }) : [],
+      query.title && query.author ? this.prisma.summary.findMany({
+        where: { ...base, title: query.title, author: query.author }, select, take: 51,
+      }) : [],
+      this.prisma.summary.count({ where: { userId, status: SummaryStatus.READY, audioSha256: null } }),
+    ]);
+    const unique = new Map([...hashMatches, ...titleMatches].map((row) => [row.id, row]));
+    const rows = [...unique.values()];
+    return {
+      matches: rows.slice(0, 50).map((row) => ({
+        id: row.id, title: row.title, author: row.author,
+        exact: Boolean(query.sha256 && row.audioSha256 === query.sha256),
+        inTrash: Boolean(row.deletedAt), pending: row.status === SummaryStatus.PENDING,
+      })),
+      unchecked, truncated: rows.length > 50,
+    };
+  }
+
+  async cancelPending(id: string, userId: string) {
+    const updated = await this.prisma.summary.updateMany({
+      where: { id, userId, status: SummaryStatus.PENDING, deletedAt: null, cancelRequestedAt: null },
+      data: { cancelRequestedAt: new Date() },
+    });
+    if (updated.count) return;
+    const row = await this.prisma.summary.findFirst({ where: { id, userId, deletedAt: null } });
+    if (!row) throw new NotFoundException('Resumen no encontrado');
+    if (row.cancelRequestedAt && row.status === SummaryStatus.PENDING) return;
+    throw new ConflictException('El audio ya se completó y no se puede cancelar la carga');
   }
 
   async complete(id: string, userId: string) {
     const summary = await this.get(id, userId);
     if (summary.status === SummaryStatus.READY) return summary;
+    if (summary.cancelRequestedAt) throw new ConflictException('Esta carga fue cancelada');
+    if (summary.purgeClaimedAt) throw new ConflictException('Esta carga está siendo eliminada');
 
     const size = await this.storage.getObjectSize(summary.s3Key);
     if (size === null) throw new BadRequestException('El archivo aún no existe en S3');
@@ -258,10 +343,25 @@ export class SummariesService {
       throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
     }
 
-    await this.prisma.summary.update({
-      where: { id: summary.id },
-      data: { status: SummaryStatus.READY, durationSeconds: info.durationSeconds },
+    let audioSha256: string;
+    try {
+      audioSha256 = await hashAudio(this.storage, summary.s3Key);
+    } catch (error) {
+      this.logger.error(`No se pudo calcular la huella del audio ${summary.id}: ${error}`);
+      throw new BadGatewayException('No se pudo verificar el archivo; inténtalo de nuevo');
+    }
+    if (summary.requestedSha256 && summary.requestedSha256 !== audioSha256) {
+      throw new BadRequestException('El archivo subido no coincide con la huella de la carga');
+    }
+    const updated = await this.prisma.summary.updateMany({
+      where: { id: summary.id, userId, status: SummaryStatus.PENDING, cancelRequestedAt: null, purgeClaimedAt: null },
+      data: { status: SummaryStatus.READY, durationSeconds: info.durationSeconds, audioSha256 },
     });
+    if (!updated.count) {
+      const current = await this.get(id, userId);
+      if (current.status === SummaryStatus.READY) return current;
+      throw new ConflictException('Esta carga fue cancelada');
+    }
     // La portada incrustada es un extra: si no se puede procesar, el audio queda listo igualmente.
     if (info.picture) {
       await this.storeCover({ id: summary.id, s3Key: summary.s3Key, coverKey: null }, info.picture).catch((error) =>

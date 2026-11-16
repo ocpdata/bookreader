@@ -10,6 +10,7 @@ import { deleteSummary, getPlaybackUrl, getSummary, resetProgress, saveProgress,
 import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
+import CategoryChip from './CategoryChip'
 import ConfirmDialog from './ConfirmDialog'
 import CoverImage from './CoverImage'
 
@@ -121,7 +122,7 @@ export default function SummaryDetail() {
   }
 
   const meta = summary
-    ? [summary.author, summary.category.name, formatDuration(summary.durationSeconds)].filter(Boolean).join(' · ')
+    ? [summary.author, formatDuration(summary.durationSeconds)].filter(Boolean).join(' · ')
     : ''
 
   return (
@@ -141,6 +142,7 @@ export default function SummaryDetail() {
               </Typography>
               {summary.summaryTitle && <Typography variant="subtitle1">{summary.summaryTitle}</Typography>}
               <Typography color="text.secondary">{meta}</Typography>
+              <CategoryChip name={summary.category.name} />
               {summary.narrator && (
                 <Typography variant="body2" color="text.secondary">
                   Narra: {summary.narrator}

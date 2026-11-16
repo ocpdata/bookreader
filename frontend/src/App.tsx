@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import { createCategory, deleteCategory, listCategories, type CurrentUser } from './api'
 import { useAuth } from './auth'
 import AccountView from './components/AccountView'
+import BatchUploadView from './components/BatchUploadView'
 import ForgotPasswordView from './components/ForgotPasswordView'
 import HomeView from './components/HomeView'
 import { PrivacyView, TermsView } from './components/LegalViews'
@@ -137,6 +138,7 @@ export default function App() {
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
           <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
+          <Route path="/audios/lote" element={<RequireAuth><BatchUploadView categories={categories} /></RequireAuth>} />
           <Route path="/audios/:id" element={<RequireAuth><SummaryDetail /></RequireAuth>} />
           <Route path="/audios/:id/editar" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />

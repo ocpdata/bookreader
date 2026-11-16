@@ -23,6 +23,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { SummariesService } from './summaries.service';
 import {
   CreateSummaryDto,
+  DuplicateQueryDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -43,6 +44,11 @@ export class SummariesController {
   @HttpCode(200)
   move(@CurrentUser() userId: string, @Body() dto: MoveSummariesDto) {
     return this.summaries.moveMany(userId, dto);
+  }
+
+  @Get('duplicates')
+  duplicates(@CurrentUser() userId: string, @Query() query: DuplicateQueryDto) {
+    return this.summaries.duplicates(userId, query);
   }
 
   @Get(':id')
@@ -96,6 +102,12 @@ export class SummariesController {
   @HttpCode(200)
   complete(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.summaries.complete(id, userId);
+  }
+
+  @Post(':id/cancel-upload')
+  @HttpCode(204)
+  async cancelUpload(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    await this.summaries.cancelPending(id, userId);
   }
 
   /** Mueve a la papelera (recuperable). El borrado definitivo está en /trash. */

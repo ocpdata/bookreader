@@ -16,6 +16,7 @@ interface Props {
   fullWidth?: boolean
   size?: 'small' | 'medium'
   autoFocus?: boolean
+  disabled?: boolean
 }
 
 export default function FolderSelect({
@@ -28,6 +29,7 @@ export default function FolderSelect({
   fullWidth = true,
   size,
   autoFocus,
+  disabled,
 }: Props) {
   const exclude = moving ? subtreeIds(folders, moving) : new Set<string>()
   // Una carpeta (nueva o movida, con sus subcarpetas) no puede superar los niveles permitidos.
@@ -46,8 +48,11 @@ export default function FolderSelect({
       fullWidth={fullWidth}
       size={size}
       autoFocus={autoFocus}
+      disabled={disabled}
       slotProps={{
+        inputLabel: { shrink: true },
         select: {
+          displayEmpty: true,
           renderValue: (v) => (v ? pathOf(folders, v as string).map((f) => f.name).join(' › ') : 'Sin carpeta (raíz)'),
         },
       }}

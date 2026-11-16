@@ -15,7 +15,9 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { formatClock, formatDuration } from '../format'
 import type { Summary } from '../types'
+import CategoryChip from './CategoryChip'
 import CoverImage from './CoverImage'
+import ExpandableDescription from './ExpandableDescription'
 
 interface Props {
   summary: Summary
@@ -48,7 +50,7 @@ export default function SummaryCard({
 }: Props) {
   const navigate = useNavigate()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
-  const meta = [s.author, s.category.name, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
+  const meta = [s.author, formatDuration(s.durationSeconds)].filter(Boolean).join(' · ')
   const progress = s.progress
   const inProgress = !!progress && !progress.completed && progress.positionSeconds > 0
   const percent =
@@ -80,6 +82,10 @@ export default function SummaryCard({
           </Stack>
           {!compact && s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{meta}</Typography>
+          <Box sx={{ mt: 0.75 }}>
+            <CategoryChip name={s.category.name} />
+          </Box>
+          {s.description?.trim() && <ExpandableDescription description={s.description} title={s.title} />}
           {!compact && folderPath && (
             <Chip
               label={`📁 ${folderPath}`}

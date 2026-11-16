@@ -87,6 +87,14 @@ export class UpdateSummaryDto {
 }
 
 export class CreateSummaryDto {
+  @IsOptional()
+  @IsUUID()
+  uploadRequestId?: string;
+
+  @IsOptional()
+  @Matches(/^[a-f0-9]{64}$/)
+  requestedSha256?: string;
+
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
@@ -144,6 +152,28 @@ export class CreateSummaryDto {
   @Min(1)
   @Max(MAX_AUDIO_BYTES)
   sizeBytes!: number;
+}
+
+export class DuplicateQueryDto {
+  @IsOptional()
+  @IsUUID()
+  uploadRequestId?: string;
+
+  @IsOptional()
+  @Matches(/^[a-f0-9]{64}$/)
+  sha256?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  author?: string;
 }
 
 export const SORT_OPTIONS = ['recent', 'title', 'duration', 'listened'] as const;

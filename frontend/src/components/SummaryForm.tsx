@@ -22,6 +22,7 @@ import {
 } from '../api'
 import { formatBytes, formatDuration } from '../format'
 import type { SelectableCategory, Folder, Summary, TagSuggestion } from '../types'
+import BookInfoSearchDialog from './BookInfoSearchDialog'
 import CategoriesDialog from './CategoriesDialog'
 import CoverField from './CoverField'
 import FolderSelect from './FolderSelect'
@@ -65,6 +66,7 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
   const [usage, setUsage] = useState<Usage | null>(null)
   const [error, setError] = useState('')
   const [categoriesOpen, setCategoriesOpen] = useState(false)
+  const [bookSearchOpen, setBookSearchOpen] = useState(false)
 
   useEffect(() => {
     if (editing) return
@@ -165,9 +167,19 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
         <Typography variant="h5" component="h1">
           {editing ? 'Editar resumen' : 'Agregar resumen'}
         </Typography>
+        {!editing && (
+          <Button type="button" onClick={() => navigate(`/audios/lote${folderId ? `?carpeta=${encodeURIComponent(folderId)}` : ''}`)}
+            sx={{ alignSelf: 'flex-start' }}>
+            Subir varios audios
+          </Button>
+        )}
         {notice && <Alert severity="warning">{notice}</Alert>}
         <TextField label="Título del libro" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <TextField label="Autor del libro" value={author} onChange={(e) => setAuthor(e.target.value)} required />
+        <Button type="button" variant="outlined" onClick={() => setBookSearchOpen(true)} sx={{ alignSelf: 'flex-start' }}>
+          Buscar información en OpenLibrary.org
+        </Button>
+        {bookSearchOpen && <BookInfoSearchDialog title={title} author={author} onClose={() => setBookSearchOpen(false)} />}
         <TextField
           label="Título del resumen (opcional)"
           value={summaryTitle}

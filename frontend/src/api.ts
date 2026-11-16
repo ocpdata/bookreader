@@ -228,6 +228,46 @@ export const resetProgress = (id: string) => request<void>(`/summaries/${id}/pro
 export const updateSummary = (id: string, fields: SummaryFields) =>
   request<Summary>(`/summaries/${id}`, { method: 'PATCH', body: JSON.stringify(fields) })
 
+export interface DuplicateMatch {
+  id: string
+  title: string
+  author: string
+  exact: boolean
+  inTrash: boolean
+  pending: boolean
+}
+
+export function findDuplicates(sha256: string, title: string, author: string, uploadRequestId: string) {
+  const query = new URLSearchParams({ sha256, title, author, uploadRequestId })
+  return request<{ matches: DuplicateMatch[]; unchecked: number; truncated: boolean }>(`/summaries/duplicates?${query}`)
+}
+
+export const cancelPendingUpload = (id: string) =>
+  request<void>(`/summaries/${id}/cancel-upload`, { method: 'POST' })
+
+export async function beginBatchItem(fields: SummaryFields, file: { name: string; size: number }, uploadRequestId: string, requestedSha256: string) {
+  const contentType = audioContentType(file.name)
+  if (!contentType) throw new Error('El archivo debe ser MP3 o M4A')
+  return request<{
+    summary: Summary
+    upload: { url: string; headers: Record<string, string> } | null
+  }>('/summaries', {
+    method: 'POST',
+    body: JSON.stringify({ ...fields, uploadRequestId, requestedSha256, originalFilename: file.name, contentType, sizeBytes: file.size }),
+  })
+}
+
+export async function finishBatchItem(summary: Summary, upload: { url: string; headers: Record<string, string> }, file: File): Promise<Summary> {
+  let response: Response
+  try {
+    response = await fetch(upload.url, { method: 'PUT', headers: upload.headers, body: file })
+  } catch {
+    throw new Error('No se pudo subir el archivo. Comprueba tu conexión y reintenta.')
+  }
+  if (!response.ok) throw new Error(`S3 rechazó la carga (HTTP ${response.status})`)
+  return request<Summary>(`/summaries/${summary.id}/complete`, { method: 'POST' })
+}
+
 export async function createSummary(fields: SummaryFields, file: File): Promise<Summary> {
   const contentType = audioContentType(file.name)
   if (!contentType) throw new Error('El archivo debe ser MP3 o M4A')

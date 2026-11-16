@@ -50,14 +50,18 @@ export class StorageService {
     this.bucket = config.getOrThrow<string>('S3_BUCKET');
   }
 
-  createUploadUrl(key: string, contentType: string, sizeBytes: number) {
+  createUploadUrl(key: string, contentType: string, sizeBytes: number, sha256?: string) {
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       ContentType: contentType,
       ContentLength: sizeBytes,
+      ...(sha256 ? { ChecksumSHA256: Buffer.from(sha256, 'hex').toString('base64') } : {}),
     });
-    return getSignedUrl(this.s3, command, { expiresIn: UPLOAD_TTL_SECONDS });
+    return getSignedUrl(this.s3, command, {
+      expiresIn: UPLOAD_TTL_SECONDS,
+      ...(sha256 ? { unhoistableHeaders: new Set(['x-amz-checksum-sha256']) } : {}),
+    });
   }
 
   createPlaybackUrl(key: string) {

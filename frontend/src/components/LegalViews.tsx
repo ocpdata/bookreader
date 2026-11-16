@@ -72,7 +72,7 @@ export function PrivacyView() {
         {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. No vendemos tus datos ni los usamos para publicidad.'}
       </Section>
       <Section title="Con quién se comparten">
-        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
+        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
       </Section>
       <Section title="Cookies">
         {'Solo usamos una cookie de sesión necesaria para mantenerte conectado. No usamos cookies de seguimiento ni publicidad.'}
