@@ -73,8 +73,8 @@ export default function StatisticsView({ admin = false }: { admin?: boolean }) {
         <MenuItem value="month">Últimos 30 días (UTC)</MenuItem>
       </TextField>
       <Alert severity="info">
-        El historial comienza al activar esta función y solo incluye escucha en la web. Las apps externas todavía no se contabilizan.
-        El tiempo es aproximado y puede perderse una parte si se cierra el navegador o falla la conexión.
+        El historial comienza al activar esta función e incluye la escucha en la web y la que informan las apps compatibles
+        (en línea y sin conexión). El tiempo es aproximado y puede perderse una parte si se cierra el navegador o falla la conexión.
       </Alert>
       {error && <Alert severity="error">{error}</Alert>}
       {loading && <CircularProgress size={28} />}

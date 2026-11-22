@@ -524,6 +524,14 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
       expect(close.status).toBe(200);
       expect((await api().get(`/api/me/progress/${item.id}`).set(bearer(tokenA))).body).toMatchObject({ currentTime: 97, isFinished: true, progress: 1 });
       await api().get(`/public/session/${session.id}/track/1`).expect(200);
+
+      // El tiempo escuchado informado en sync y close queda en las estadísticas (12 s + 4 s).
+      const events = await prisma.listeningEvent.findMany({ where: { userId: a.id } });
+      expect(events.map((e) => e.durationMs).sort((x, y) => x - y)).toEqual([4000, 12000]);
+      // Un valor absurdo se recorta al tope de 30 minutos por sincronización.
+      await api().post(`/api/session/${session.id}/sync`).set(bearer(tokenA)).send({ currentTime: 97, timeListened: 999999 }).expect(200);
+      expect(await prisma.listeningEvent.count({ where: { userId: a.id, durationMs: 30 * 60_000 } })).toBe(1);
+      expect(await prisma.listeningEvent.count({ where: { userId: b.id } })).toBe(0);
     });
   });
 
@@ -627,6 +635,39 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
       expect(await current()).toBe(80);
       const tooMany = Array.from({ length: 201 }, (_, i) => ({ id: `x${i}`, libraryItemId: item.id, currentTime: 1 }));
       await api().post('/api/session/local-all').set(bearer(token)).send({ sessions: tooMany }).expect(400);
+    });
+
+    it('cuenta el tiempo de las sesiones sin conexión una sola vez, aunque se reenvíen', async () => {
+      const user = await createUser();
+      const token = await tokenFor(user.email);
+      const item = await addItem(user.id);
+      const sessionId = crypto.randomUUID();
+      const send = (body: object) => api().post('/api/session/local').set(bearer(token))
+        .send({ id: sessionId, libraryItemId: item.id, currentTime: 10, duration: 100, ...body });
+      const total = () => prisma.listeningEvent.aggregate({ where: { userId: user.id }, _sum: { durationMs: true } })
+        .then((r) => r._sum.durationMs ?? 0);
+
+      // La misma sesión reenviada conserva el máximo reportado, nunca la suma; incluso con el progreso al día.
+      await send({ timeListening: 20, updatedAt: Date.now() }).expect(200);
+      expect(await total()).toBe(20000);
+      await send({ timeListening: 15, updatedAt: Date.now() - 1000 }).expect(200);
+      expect(await total()).toBe(20000);
+      await send({ timeListening: 30, updatedAt: Date.now() - 1000 }).expect(200);
+      expect(await total()).toBe(30000);
+
+      // Un identificador que no es UUID no registra tiempo (los de prueba de otras suites tampoco).
+      await api().post('/api/session/local').set(bearer(token))
+        .send({ id: 'no-uuid', libraryItemId: item.id, currentTime: 11, timeListening: 40, updatedAt: Date.now() }).expect(200);
+      expect(await total()).toBe(30000);
+
+      // Otro usuario no puede reclamar la sesión ajena para su propio audio.
+      const other = await createUser();
+      const otherToken = await tokenFor(other.email);
+      const otherItem = await addItem(other.id);
+      await api().post('/api/session/local').set(bearer(otherToken))
+        .send({ id: sessionId, libraryItemId: otherItem.id, currentTime: 5, timeListening: 50, updatedAt: Date.now() }).expect(200);
+      expect(await prisma.listeningEvent.count({ where: { userId: other.id } })).toBe(0);
+      expect(await total()).toBe(30000);
     });
 
     it('responde vacíos el historial y las estadísticas', async () => {

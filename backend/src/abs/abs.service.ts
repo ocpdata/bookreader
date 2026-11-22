@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { StatisticsService } from '../statistics/statistics.service';
 import { SummariesService } from '../summaries/summaries.service';
 import { LIBRARY_ID } from './abs.constants';
 import {
@@ -43,6 +44,7 @@ export class AbsService {
     private readonly prisma: PrismaService,
     private readonly summaries: SummariesService,
     private readonly playSessions: PlaySessionService,
+    private readonly statistics: StatisticsService,
   ) {}
 
   private readonly live = (userId: string) => ({ userId, status: SummaryStatus.READY, deletedAt: null });
@@ -385,6 +387,8 @@ export class AbsService {
     if (!session) throw new NotFoundException('Sesión no encontrada');
     const currentTime = num(body.currentTime);
     if (currentTime !== undefined) await this.updateProgress(userId, session.summaryId, { currentTime });
+    const timeListened = num(body.timeListened);
+    if (timeListened) await this.statistics.recordAppChunk(userId, session.summaryId, timeListened);
     await this.playSessions.touch(sessionId);
     return { id: session.id, libraryItemId: session.summaryId, currentTime: currentTime ?? session.startTime };
   }
@@ -399,6 +403,9 @@ export class AbsService {
 
     const row = await this.prisma.summary.findFirst({ where: { id: itemId, ...this.live(userId) }, include: itemInclude(userId) });
     if (!row) return { id, success: false, error: 'Elemento no encontrado' };
+    // El tiempo escuchado se registra aunque el progreso ya esté al día: un reenvío no lo duplica.
+    const timeListening = num(s.timeListening);
+    if (timeListening) await this.statistics.recordAppSession(userId, itemId, id, timeListening, num(s.updatedAt));
     const existing = row.progress[0];
     const reportedAt = num(s.updatedAt) ?? Date.now();
     if (existing && existing.updatedAt.getTime() >= reportedAt) return { id, success: true, progressSynced: false };

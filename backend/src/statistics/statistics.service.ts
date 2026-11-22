@@ -4,10 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { SummaryStatus } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { AdminService } from '../auth/admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const DAY_MS = 86400_000;
+/** Tope por sincronización en línea: las apps informan el tiempo escuchado cada pocos segundos. */
+const MAX_APP_CHUNK_MS = 30 * 60_000;
+/** Tope por sesión sin conexión y antigüedad máxima aceptada para su fecha reportada. */
+const MAX_APP_SESSION_MS = 24 * 3600_000;
+const MAX_REPORTED_AGE_MS = 30 * DAY_MS;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function periodStart(period: string | undefined, now = new Date()) {
   const today = Date.UTC(
@@ -57,6 +64,51 @@ export class StatisticsService {
       ) {
         throw new BadRequestException('Identificador de escucha ya utilizado');
       }
+    }
+  }
+
+  /** Escucha incremental que informa una app conectada (timeListened de cada sincronización). */
+  async recordAppChunk(userId: string, summaryId: string, seconds: number) {
+    const durationMs = Math.round(Math.min(seconds * 1000, MAX_APP_CHUNK_MS));
+    if (durationMs < 1000) return;
+    await this.prisma.listeningEvent.create({
+      data: { id: randomUUID(), userId, summaryId, durationMs },
+    });
+  }
+
+  /**
+   * Sesión grabada sin conexión: la app reenvía el total acumulado de la misma sesión (UUID del
+   * cliente), así que solo se conserva el máximo reportado, nunca la suma de los reenvíos.
+   */
+  async recordAppSession(
+    userId: string,
+    summaryId: string,
+    sessionId: string,
+    seconds: number,
+    reportedAtMs?: number,
+  ) {
+    if (!UUID_RE.test(sessionId)) return;
+    const durationMs = Math.round(Math.min(seconds * 1000, MAX_APP_SESSION_MS));
+    if (durationMs < 1000) return;
+    const now = Date.now();
+    const occurredAt = new Date(
+      Math.min(now, Math.max(now - MAX_REPORTED_AGE_MS, reportedAtMs ?? now)),
+    );
+    const created = await this.prisma.listeningEvent.createMany({
+      data: [{ id: sessionId, userId, summaryId, durationMs, occurredAt }],
+      skipDuplicates: true,
+    });
+    if (created.count) return;
+    const existing = await this.prisma.listeningEvent.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+    // El identificador lo elige la app: si pertenece a otro usuario u otro audio, se ignora.
+    if (existing.userId !== userId || existing.summaryId !== summaryId) return;
+    if (durationMs > existing.durationMs) {
+      await this.prisma.listeningEvent.update({
+        where: { id: sessionId },
+        data: { durationMs },
+      });
     }
   }
 
