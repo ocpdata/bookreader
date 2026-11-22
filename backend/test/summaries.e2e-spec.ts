@@ -214,9 +214,10 @@ describe('Summaries (e2e)', () => {
   it('importa desde Drive solo para el dueño y reutiliza la reserva al reintentar', async () => {
     const bytes = fixture('sample.mp3');
     const hash = createHash('sha256').update(bytes).digest('hex');
-    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba' };
     const metadata = jest.spyOn(drive, 'metadata').mockResolvedValue({
-      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: selection.version,
+      // Una versión distinta a la de la inspección no impide importar: Drive la sube con cualquier roce.
+      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: '99',
     });
     jest.spyOn(drive, 'stream').mockResolvedValue(Readable.from([bytes]));
     const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
@@ -244,9 +245,9 @@ describe('Summaries (e2e)', () => {
   it('no completa la importación si Drive cambia después de la comprobación', async () => {
     const bytes = fixture('sample.mp3');
     const hash = createHash('sha256').update(bytes).digest('hex');
-    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba' };
     jest.spyOn(drive, 'metadata').mockResolvedValue({
-      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: '2',
+      id: selection.fileId, name: 'otro-archivo.mp3', size: bytes.length, version: '1',
     });
     const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
     const id = created.body.summary.id;
@@ -259,7 +260,7 @@ describe('Summaries (e2e)', () => {
   it('rechaza bytes distintos aunque Drive conserve el mismo tamaño y versión', async () => {
     const bytes = fixture('sample.mp3');
     const hash = createHash('sha256').update(bytes).digest('hex');
-    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba' };
     jest.spyOn(drive, 'metadata').mockResolvedValue({
       id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: '1',
     });
@@ -279,7 +280,7 @@ describe('Summaries (e2e)', () => {
     await request(app.getHttpServer()).post(`/api/summaries/${id}/cancel-upload`).set(as(DEFAULT_USER_ID)).expect(204);
     const metadata = jest.spyOn(drive, 'metadata');
     await request(app.getHttpServer()).post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID))
-      .send({ fileId: 'drive_file', accessToken: 'token', version: '1' }).expect(409);
+      .send({ fileId: 'drive_file', accessToken: 'token' }).expect(409);
     expect(metadata).not.toHaveBeenCalled();
   });
 

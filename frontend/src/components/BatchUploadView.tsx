@@ -44,7 +44,7 @@ interface Item {
   driveFileId?: string
 }
 
-type DriveAttachment = DriveSelection & { version: string }
+type DriveAttachment = DriveSelection
 
 function isItem(value: unknown): value is Item {
   if (!value || typeof value !== 'object') return false
@@ -214,7 +214,7 @@ export default function BatchUploadView({ categories }: { categories: Selectable
           if (awaiting.hash !== file.sha256 || awaiting.size !== file.size || awaiting.name !== file.name) {
             throw new Error(`${file.name}: el contenido cambió. Cancela u omite la carga anterior y selecciónalo de nuevo.`)
           }
-          driveFiles.current.set(awaiting.key, { ...selection, version: file.version })
+          driveFiles.current.set(awaiting.key, selection)
           update(awaiting.key, { reviewed: false, accepted: false })
           setAttached((current) => new Set(current).add(awaiting.key))
           continue
@@ -225,7 +225,7 @@ export default function BatchUploadView({ categories }: { categories: Selectable
           folderId: folder, status: 'ready', started: false, matches: [], unchecked: 0, truncated: false,
           reviewed: false, accepted: false, source: 'drive', driveFileId: file.id,
         }
-        driveFiles.current.set(item.key, { ...selection, version: file.version })
+        driveFiles.current.set(item.key, selection)
         save([...itemsRef.current, item])
         setAttached((current) => new Set(current).add(item.key))
       }
@@ -314,8 +314,7 @@ export default function BatchUploadView({ categories }: { categories: Selectable
           update(item.key, { summaryId: result.summary.id })
           if (result.upload) {
             if (item.source === 'drive') {
-              const drive = driveFiles.current.get(item.key)!
-              await importDriveFile(result.summary.id, drive, drive.version)
+              await importDriveFile(result.summary.id, driveFiles.current.get(item.key)!)
             } else {
               await finishBatchItem(result.summary, result.upload, files.current.get(item.key)!)
             }

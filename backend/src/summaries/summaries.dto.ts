@@ -192,12 +192,6 @@ export class DriveFileDto {
   resourceKey?: string;
 }
 
-export class DriveImportDto extends DriveFileDto {
-  @IsString()
-  @Matches(/^[0-9]{1,64}$/)
-  version!: string;
-}
-
 export const SORT_OPTIONS = ['recent', 'title', 'duration', 'listened'] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
 

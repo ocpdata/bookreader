@@ -304,9 +304,9 @@ export const inspectDriveFile = (selection: DriveSelection) =>
     method: 'POST', body: JSON.stringify(selection),
   })
 
-export const importDriveFile = (id: string, selection: DriveSelection, version: string) =>
+export const importDriveFile = (id: string, selection: DriveSelection) =>
   request<Summary>(`/summaries/${id}/drive-import`, {
-    method: 'POST', body: JSON.stringify({ ...selection, version }),
+    method: 'POST', body: JSON.stringify(selection),
   })
 
 export async function beginBatchItem(fields: SummaryFields, file: { name: string; size: number }, uploadRequestId: string, requestedSha256: string) {

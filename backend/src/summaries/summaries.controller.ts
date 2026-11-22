@@ -25,7 +25,6 @@ import {
   CreateSummaryDto,
   DuplicateQueryDto,
   DriveFileDto,
-  DriveImportDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -64,7 +63,7 @@ export class SummariesController {
   importDrive(
     @CurrentUser() userId: string,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: DriveImportDto,
+    @Body() dto: DriveFileDto,
   ) {
     return this.summaries.importDrive(id, userId, dto);
   }

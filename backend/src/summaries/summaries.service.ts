@@ -19,7 +19,6 @@ import {
   CreateSummaryDto,
   DuplicateQueryDto,
   DriveFileDto,
-  DriveImportDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -333,17 +332,19 @@ export class SummariesService {
     return this.withDriveLock(userId, () => this.drive.inspect(dto.fileId, dto.accessToken, dto.resourceKey));
   }
 
-  importDrive(id: string, userId: string, dto: DriveImportDto) {
+  importDrive(id: string, userId: string, dto: DriveFileDto) {
     return this.withDriveLock(userId, () => this.copyDrive(id, userId, dto));
   }
 
-  private async copyDrive(id: string, userId: string, dto: DriveImportDto) {
+  private async copyDrive(id: string, userId: string, dto: DriveFileDto) {
     const summary = await this.get(id, userId);
     if (summary.status === SummaryStatus.READY) return summary;
     if (summary.cancelRequestedAt || summary.purgeClaimedAt) throw new ConflictException('Esta carga no está disponible');
     if (!summary.requestedSha256) throw new BadRequestException('La importación requiere una huella verificada');
     const file = await this.drive.metadata(dto.fileId, dto.accessToken, dto.resourceKey);
-    if (file.version !== dto.version || file.size !== summary.sizeBytes || file.name !== summary.originalFilename) {
+    // La versión de Drive sube con cualquier roce (abrir, mover, miniaturas), así que no se compara; la
+    // integridad real la garantiza la huella SHA-256 al copiar. Aquí solo se descartan cambios evidentes.
+    if (file.size !== summary.sizeBytes || file.name !== summary.originalFilename) {
       throw new ConflictException('El archivo de Drive cambió. Selecciónalo y comprueba los duplicados de nuevo.');
     }
     const stream = await this.drive.stream(dto.fileId, dto.accessToken, file.size, dto.resourceKey);
