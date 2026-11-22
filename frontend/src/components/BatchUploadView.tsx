@@ -428,6 +428,9 @@ export default function BatchUploadView({ categories }: { categories: Selectable
                 onChange={(folderId) => edit(item, { folderId })} />
               {item.unchecked > 0 && item.reviewed && <Alert severity="info">La comprobación exacta está incompleta: {item.unchecked} audios aún no tienen huella.</Alert>}
               {item.truncated && item.reviewed && <Alert severity="info">Se muestran las primeras 50 coincidencias.</Alert>}
+              {item.reviewed && item.matches.length === 0 && local.length === 0 && item.status !== 'completed' && item.status !== 'cancelled' && (
+                <Alert severity="success">Sin coincidencias: no hay duplicados de este audio.</Alert>
+              )}
               {item.reviewed && (item.matches.length > 0 || local.length > 0) && (
                 <Alert severity="warning">
                   {item.matches.map((match) => (
