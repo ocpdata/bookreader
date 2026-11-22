@@ -69,9 +69,12 @@ function loadSaved(key: string): { items: Item[]; error: string } {
     const saved: unknown = raw ? JSON.parse(raw) : []
     if (!Array.isArray(saved) || !saved.every(isItem)) throw new Error('El lote guardado no es válido')
     return {
-      items: saved.map((item) => item.status === 'uploading'
-        ? { ...item, status: 'failed' as const, error: 'La carga se interrumpió. Selecciona de nuevo el archivo y reintenta.' }
-        : item),
+      // Los completados ya están en la biblioteca: se descartan al entrar. Fallidos y pendientes se conservan para retomarlos.
+      items: saved
+        .filter((item) => item.status !== 'completed')
+        .map((item) => item.status === 'uploading'
+          ? { ...item, status: 'failed' as const, error: 'La carga se interrumpió. Selecciona de nuevo el archivo y reintenta.' }
+          : item),
       error: '',
     }
   } catch (e) {
