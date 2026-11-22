@@ -8,7 +8,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { User, UserStatus } from '@prisma/client';
+import { User, UserPlan, UserStatus } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { MailService } from '../mail/mail.service';
 import { accountDeletedMessage, accountExistsMessage, passwordChangedMessage, resetPasswordMessage, verifyEmailMessage } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,7 +18,7 @@ import { EmailTokenService } from './email-token.service';
 import { InvitationService } from './invitation.service';
 import { PasswordService } from './password.service';
 import { HOUR_MS, SlidingWindowLimiter } from './rate-limiter';
-import { appUrl, registrationMode, TERMS_VERSION } from './registration.config';
+import { appUrl, registrationMode, TERMS_VERSION, TRIAL_DAYS } from './registration.config';
 import { RegisterDto } from './registration.dto';
 import { SessionService } from './session.service';
 
@@ -142,9 +143,17 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
   async verifyEmail(token: string) {
     const consumed = await this.tokens.consume(token, 'VERIFY_EMAIL');
     if (!consumed) throw new BadRequestException(INVALID_LINK);
+    const user = await this.prisma.user.findUnique({ where: { id: consumed.userId }, select: { email: true } });
+    // La prueba es una por correo y sobrevive al borrado de la cuenta: solo se guarda el hash de la dirección.
+    let planExpiresAt = new Date();
+    if (user?.email) {
+      const emailHash = createHash('sha256').update(user.email).digest('hex');
+      const claimed = await this.prisma.trialClaim.createMany({ data: [{ emailHash }], skipDuplicates: true });
+      if (claimed.count) planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 24 * HOUR_MS);
+    }
     await this.prisma.user.updateMany({
       where: { id: consumed.userId, status: UserStatus.PENDING },
-      data: { status: UserStatus.ACTIVE, emailVerifiedAt: new Date() },
+      data: { status: UserStatus.ACTIVE, emailVerifiedAt: new Date(), plan: UserPlan.TRIAL, planExpiresAt },
     });
   }
 

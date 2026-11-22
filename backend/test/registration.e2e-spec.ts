@@ -150,6 +150,26 @@ describe('Registro, verificación y recuperación (e2e)', () => {
       expect((await api().post('/login').send({ username: email, password: PASSWORD })).status).toBe(200);
     });
 
+    it('al verificar empieza la prueba de 30 días, y es una sola por correo aunque se borre la cuenta', async () => {
+      const email = newEmail();
+      await register({ email });
+      await api().post('/api/auth/verify-email').send({ token: tokenIn(sentTo(email)[0]) }).expect(200);
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(user.plan).toBe('TRIAL');
+      const days = (user.planExpiresAt!.getTime() - Date.now()) / 86400_000;
+      expect(days).toBeGreaterThan(29);
+      expect(days).toBeLessThanOrEqual(30);
+
+      // Borrar la cuenta y volver a registrarse no reinicia la prueba: queda vencida de inmediato.
+      await prisma.user.delete({ where: { id: user.id } });
+      outbox = [];
+      await register({ email });
+      await api().post('/api/auth/verify-email').send({ token: tokenIn(sentTo(email)[0]) }).expect(200);
+      const again = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(again.plan).toBe('TRIAL');
+      expect(again.planExpiresAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
     it('el enlace de verificación es de un solo uso, caduca y rechaza basura', async () => {
       const email = newEmail();
       await register({ email });

@@ -19,6 +19,15 @@ enum UserRole {
   ADMIN
 }
 
+// Plan comercial. FOUNDER: cuentas previas al cobro y creadas por administración (límites clásicos);
+// TRIAL: prueba de 30 días; PREMIUM: suscripción de pago. plan_expires_at marca el fin de la prueba o
+// del período pagado; nulo = sin vencimiento.
+enum UserPlan {
+  TRIAL
+  PREMIUM
+  FOUNDER
+}
+
 enum EmailTokenPurpose {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -41,6 +50,8 @@ model User {
   // PENDIENTE hasta verificar el correo; SUSPENDIDO no puede entrar (ver scripts/user-admin.js).
   status            UserStatus         @default(ACTIVE)
   role              UserRole           @default(USER)
+  plan              UserPlan           @default(FOUNDER)
+  planExpiresAt     DateTime?          @map("plan_expires_at")
   emailVerifiedAt   DateTime?          @map("email_verified_at")
   termsAcceptedAt   DateTime?          @map("terms_accepted_at")
   termsVersion      String?            @map("terms_version") @db.VarChar(20)
@@ -316,6 +327,15 @@ model EmailToken {
   @@index([userId, purpose])
   @@index([expiresAt])
   @@map("email_tokens")
+}
+
+// Registro de correos que ya usaron su prueba gratuita: sobrevive al borrado de la cuenta para que
+// recrearla no reinicie la prueba. Solo se guarda el hash SHA-256 del correo normalizado.
+model TrialClaim {
+  emailHash String   @id @map("email_hash") @db.Char(64)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("trial_claims")
 }
 
 // Código de invitación para el registro en modo "invite". Se guarda solo el hash; lo crea el administrador por CLI.

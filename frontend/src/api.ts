@@ -169,6 +169,10 @@ export interface Usage {
   /** Parte del uso que está en la papelera (cuenta hasta que se elimina de forma definitiva). */
   trashBytes: number
   trashAudios: number
+  plan: 'TRIAL' | 'PREMIUM' | 'FOUNDER'
+  planExpiresAt: string | null
+  /** true cuando la prueba o el plan vencieron: se puede escuchar y borrar, pero no subir. */
+  uploadsBlocked: boolean
 }
 
 export const getUsage = () => request<Usage>('/usage')

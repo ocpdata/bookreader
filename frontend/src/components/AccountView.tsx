@@ -98,6 +98,34 @@ function DeleteAccountSection() {
   )
 }
 
+const PLAN_LABEL = { TRIAL: 'Prueba gratuita', PREMIUM: 'Premium', FOUNDER: 'Cuenta fundadora' }
+
+/** Plan comercial de la cuenta: tipo, vencimiento y si ya no se puede subir. */
+function PlanSection({ usage }: { usage: Usage }) {
+  const expires = usage.planExpiresAt ? new Date(usage.planExpiresAt) : null
+  const daysLeft = expires ? Math.max(0, Math.ceil((expires.getTime() - Date.now()) / 86400000)) : null
+  return (
+    <Stack spacing={1}>
+      <Typography variant="h6" component="h2">
+        Mi plan
+      </Typography>
+      <Typography>
+        {PLAN_LABEL[usage.plan]}
+        {expires && !usage.uploadsBlocked &&
+          ` · termina el ${expires.toLocaleDateString('es', { dateStyle: 'medium' })} (${daysLeft} ${daysLeft === 1 ? 'día' : 'días'})`}
+        {!expires && usage.plan !== 'TRIAL' && ' · sin vencimiento'}
+      </Typography>
+      {usage.uploadsBlocked && (
+        <Alert severity="warning">
+          {usage.plan === 'TRIAL'
+            ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios, pero no subir nuevos. Pronto podrás suscribirte.'
+            : 'Tu plan venció. Puedes seguir escuchando y descargando tus audios, pero no subir nuevos.'}
+        </Alert>
+      )}
+    </Stack>
+  )
+}
+
 /** Espacio y audios usados frente a la cuota de la cuenta. */
 function UsageSection() {
   const [usage, setUsage] = useState<Usage | null>(null)
@@ -112,7 +140,9 @@ function UsageSection() {
   const percent = Math.min(100, (usage.usedBytes / usage.limitBytes) * 100)
   const nearlyFull = percent >= 90 || usage.audios >= usage.maxAudios
   return (
-    <Stack spacing={1}>
+    <Stack spacing={3}>
+      <PlanSection usage={usage} />
+      <Stack spacing={1}>
       <Typography variant="h6" component="h2">
         Almacenamiento
       </Typography>
@@ -127,6 +157,7 @@ function UsageSection() {
         </Typography>
       )}
       {nearlyFull && <Alert severity="warning">Estás cerca del límite de tu cuenta.</Alert>}
+      </Stack>
     </Stack>
   )
 }

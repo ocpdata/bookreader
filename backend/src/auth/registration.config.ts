@@ -9,4 +9,7 @@ export function registrationMode(): RegistrationMode {
 /** Versión de los términos y del aviso de privacidad que aceptan las personas al registrarse. */
 export const TERMS_VERSION = '2026-11-22.1';
 
+/** Duración de la prueba gratuita que inicia al verificar el correo (una por dirección). */
+export const TRIAL_DAYS = 30;
+
 export const appUrl = (path: string) => `${(process.env.APP_PUBLIC_URL ?? 'http://localhost:5500').replace(/\/$/, '')}${path}`;

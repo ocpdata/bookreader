@@ -1070,20 +1070,23 @@ describe('Summaries (e2e)', () => {
     const SIZE = fixture('sample.mp3').length;
     const api = () => request(app.getHttpServer());
     const usage = async (user = A) => (await api().get('/api/usage').set(as(user))).body;
-    const setQuota = (data: { storageLimitBytes?: bigint | null; maxAudios?: number | null }, user = A) =>
+    const setQuota = (data: { storageLimitBytes?: bigint | null; maxAudios?: number | null; plan?: 'TRIAL' | 'PREMIUM' | 'FOUNDER'; planExpiresAt?: Date | null }, user = A) =>
       prisma.user.update({ where: { id: user }, data });
 
     beforeEach(async () => {
-      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null }, id);
+      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null, plan: 'FOUNDER', planExpiresAt: null }, id);
     });
     afterAll(async () => {
-      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null }, id);
+      for (const id of [A, USER_B]) await setQuota({ storageLimitBytes: null, maxAudios: null, plan: 'FOUNDER', planExpiresAt: null }, id);
       delete process.env.DEFAULT_STORAGE_LIMIT_BYTES;
       delete process.env.DEFAULT_MAX_AUDIOS;
     });
 
     it('informa el uso frente a la cuota (por defecto 2 GB y 500 audios) y exige sesión', async () => {
-      expect(await usage()).toEqual({ usedBytes: 0, limitBytes: 2 * 1024 ** 3, audios: 0, maxAudios: 500, trashBytes: 0, trashAudios: 0 });
+      expect(await usage()).toEqual({
+        usedBytes: 0, limitBytes: 2 * 1024 ** 3, audios: 0, maxAudios: 500, trashBytes: 0, trashAudios: 0,
+        plan: 'FOUNDER', planExpiresAt: null, uploadsBlocked: false,
+      });
       const audio = await createReady(A);
       await createReady(A);
       expect(await usage()).toMatchObject({ usedBytes: 2 * SIZE, audios: 2, trashBytes: 0 });
@@ -1091,6 +1094,27 @@ describe('Summaries (e2e)', () => {
       expect(await usage()).toMatchObject({ usedBytes: 2 * SIZE, audios: 2, trashBytes: SIZE, trashAudios: 1 });
       expect(await usage(USER_B)).toMatchObject({ usedBytes: 0, audios: 0 });
       await api().get('/api/usage').expect(401);
+    });
+
+    it('aplica los límites del plan y bloquea subir cuando la prueba o el plan vencieron', async () => {
+      // Prueba activa: 2 GB y 25 audios; se puede subir.
+      await setQuota({ plan: 'TRIAL', planExpiresAt: new Date(Date.now() + 86400_000) });
+      expect(await usage()).toMatchObject({ limitBytes: 2 * 1024 ** 3, maxAudios: 25, plan: 'TRIAL', uploadsBlocked: false });
+      expect((await createSummary(A)).status).toBe(201);
+
+      // Prueba vencida: escucha y borra, pero no sube (402); la fila no se crea.
+      await setQuota({ planExpiresAt: new Date(Date.now() - 1000) });
+      expect(await usage()).toMatchObject({ uploadsBlocked: true });
+      const blocked = await createSummary(A);
+      expect(blocked.status).toBe(402);
+      expect(blocked.body.code).toBe('PLAN_EXPIRED');
+      expect(await prisma.summary.count({ where: { userId: A } })).toBe(1);
+
+      // Premium: 10 GB y 500 audios; una cuota administrativa tiene prioridad sobre el plan.
+      await setQuota({ plan: 'PREMIUM', planExpiresAt: new Date(Date.now() + 86400_000) });
+      expect(await usage()).toMatchObject({ limitBytes: 10 * 1024 ** 3, maxAudios: 500, plan: 'PREMIUM', uploadsBlocked: false });
+      await setQuota({ maxAudios: 3 });
+      expect(await usage()).toMatchObject({ maxAudios: 3 });
     });
 
     it('rechaza el audio que no cabe en el almacenamiento, sin crear la fila ni la URL de carga', async () => {

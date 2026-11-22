@@ -11,6 +11,8 @@
  *   node scripts/user-admin.js activate <correo>               Reactiva una cuenta suspendida
  *   node scripts/user-admin.js set-quota <correo> [--gb n] [--audios n] [--reset]
  *                                                              Cuota propia de la cuenta (--reset vuelve a los valores por defecto)
+ *   node scripts/user-admin.js set-plan <correo> <trial|premium|founder> [--days n]
+ *                                                              Plan comercial; --days fija el vencimiento (sin --days, premium y founder no vencen)
  *   node scripts/user-admin.js invite [--email x] [--uses n] [--days n] [--note "..."]
  *                                                              Crea un código de invitación (se muestra una sola vez)
  *   node scripts/user-admin.js invitations                     Lista las invitaciones (sin los códigos)
@@ -189,6 +191,25 @@ const commands = {
     console.log(`Cuota de ${email}: almacenamiento ${gb}, audios ${updated.maxAudios ?? 'por defecto'}.`);
   },
 
+  async 'set-plan'(emailArg, planArg, ...args) {
+    const email = normalizeEmail(emailArg);
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) throw new Error('No existe ese usuario');
+    const plan = { trial: 'TRIAL', premium: 'PREMIUM', founder: 'FOUNDER' }[(planArg ?? '').toLowerCase()];
+    if (!plan) throw new Error('Uso: set-plan <correo> <trial|premium|founder> [--days n]');
+    let planExpiresAt = null;
+    if (args[0] === '--days') {
+      const days = Number(args[1]);
+      if (!(days > 0)) throw new Error('--days debe ser un número mayor que 0');
+      planExpiresAt = new Date(Date.now() + days * 24 * 3600 * 1000);
+    } else if (args.length) {
+      throw new Error('Uso: set-plan <correo> <trial|premium|founder> [--days n]');
+    }
+    if (plan === 'TRIAL' && !planExpiresAt) throw new Error('El plan trial requiere --days');
+    await prisma.user.update({ where: { id: user.id }, data: { plan, planExpiresAt } });
+    console.log(`Plan de ${email}: ${plan}${planExpiresAt ? `, vence ${planExpiresAt.toISOString()}` : ', sin vencimiento'}.`);
+  },
+
   async audios(emailArg) {
     const email = normalizeEmail(emailArg);
     const user = await prisma.user.findUnique({ where: { email } });
@@ -259,7 +280,7 @@ const commands = {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!commands[command]) {
-    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|set-quota|invite|invitations|audios|remove-audio|delete-user> ...');
+    console.error('Uso: user-admin.js <set-owner|create|set-password|list|suspend|activate|set-quota|set-plan|invite|invitations|audios|remove-audio|delete-user> ...');
     process.exitCode = 2;
     return;
   }

@@ -1,10 +1,14 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserPlan } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const GIB = 1024 ** 3;
 const DEFAULT_STORAGE_LIMIT_BYTES = 2 * GIB;
 const DEFAULT_MAX_AUDIOS = 500;
+const TRIAL_STORAGE_LIMIT_BYTES = 2 * GIB;
+const TRIAL_MAX_AUDIOS = 25;
+const PREMIUM_STORAGE_LIMIT_BYTES = 10 * GIB;
+const PREMIUM_MAX_AUDIOS = 500;
 
 const positive = (value: string | undefined, fallback: number) => {
   const n = Number(value);
@@ -24,6 +28,10 @@ export interface UsageSummary {
   /** Parte de lo anterior que está en la papelera: sigue contando hasta que se elimina de forma definitiva. */
   trashBytes: number;
   trashAudios: number;
+  plan: UserPlan;
+  planExpiresAt: Date | null;
+  /** true cuando la prueba o el plan de pago vencieron: se puede escuchar y borrar, pero no subir. */
+  uploadsBlocked: boolean;
 }
 
 /**
@@ -37,10 +45,30 @@ export class QuotaService {
   constructor(private readonly prisma: PrismaService) {}
 
   async limits(db: Tx | PrismaService, userId: string) {
-    const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { storageLimitBytes: true, maxAudios: true } });
+    const user = await db.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { storageLimitBytes: true, maxAudios: true, plan: true, planExpiresAt: true },
+    });
+    // Límites del plan; FOUNDER conserva los valores clásicos del servicio. Una cuota fijada por
+    // administración (set-quota) tiene prioridad sobre el plan.
+    const planLimits =
+      user.plan === UserPlan.TRIAL
+        ? { limitBytes: TRIAL_STORAGE_LIMIT_BYTES, maxAudios: TRIAL_MAX_AUDIOS }
+        : user.plan === UserPlan.PREMIUM
+          ? {
+              limitBytes: positive(process.env.PREMIUM_STORAGE_LIMIT_BYTES, PREMIUM_STORAGE_LIMIT_BYTES),
+              maxAudios: positive(process.env.PREMIUM_MAX_AUDIOS, PREMIUM_MAX_AUDIOS),
+            }
+          : {
+              limitBytes: positive(process.env.DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES),
+              maxAudios: positive(process.env.DEFAULT_MAX_AUDIOS, DEFAULT_MAX_AUDIOS),
+            };
     return {
-      limitBytes: user.storageLimitBytes !== null ? Number(user.storageLimitBytes) : positive(process.env.DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES),
-      maxAudios: user.maxAudios ?? positive(process.env.DEFAULT_MAX_AUDIOS, DEFAULT_MAX_AUDIOS),
+      limitBytes: user.storageLimitBytes !== null ? Number(user.storageLimitBytes) : planLimits.limitBytes,
+      maxAudios: user.maxAudios ?? planLimits.maxAudios,
+      plan: user.plan,
+      planExpiresAt: user.planExpiresAt,
+      uploadsBlocked: user.planExpiresAt !== null && user.planExpiresAt.getTime() < Date.now(),
     };
   }
 
@@ -55,7 +83,17 @@ export class QuotaService {
       this.totals(this.prisma, userId),
       this.totals(this.prisma, userId, { deletedAt: { not: null } }),
     ]);
-    return { usedBytes: all.bytes, limitBytes: limits.limitBytes, audios: all.audios, maxAudios: limits.maxAudios, trashBytes: trash.bytes, trashAudios: trash.audios };
+    return {
+      usedBytes: all.bytes,
+      limitBytes: limits.limitBytes,
+      audios: all.audios,
+      maxAudios: limits.maxAudios,
+      trashBytes: trash.bytes,
+      trashAudios: trash.audios,
+      plan: limits.plan,
+      planExpiresAt: limits.planExpiresAt,
+      uploadsBlocked: limits.uploadsBlocked,
+    };
   }
 
   /**
@@ -73,6 +111,18 @@ export class QuotaService {
       const existing = await findExisting?.(tx);
       if (existing) return existing;
       const [limits, used] = await Promise.all([this.limits(tx, userId), this.totals(tx, userId)]);
+      if (limits.uploadsBlocked) {
+        throw new HttpException(
+          {
+            message:
+              limits.plan === UserPlan.TRIAL
+                ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios, pero para subir nuevos necesitas una suscripción.'
+                : 'Tu plan venció. Renueva la suscripción para volver a subir audios.',
+            code: 'PLAN_EXPIRED',
+          },
+          HttpStatus.PAYMENT_REQUIRED,
+        );
+      }
       if (used.audios >= limits.maxAudios) {
         throw new HttpException(
           { message: `Alcanzaste el máximo de ${limits.maxAudios} audios. Elimina alguno (y vacía la papelera) para subir más.`, code: 'QUOTA_AUDIOS' },
