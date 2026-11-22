@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 import { ApiTokenService } from './api-token.service';
@@ -59,8 +59,8 @@ export class AuthService {
   }
 
   /** Lo que la web necesita saber de la persona; `needsTerms` es true si no aceptó la versión vigente de los términos. */
-  private present(user: { id: string; name: string; email: string | null; termsVersion: string | null }) {
-    return { id: user.id, name: user.name, email: user.email, needsTerms: user.termsVersion !== TERMS_VERSION };
+  private present(user: { id: string; name: string; email: string | null; termsVersion: string | null; role: UserRole }) {
+    return { id: user.id, name: user.name, email: user.email, needsTerms: user.termsVersion !== TERMS_VERSION, role: user.role, isOwner: user.id === OWNER_ID };
   }
 
   /** Login de una app compatible: devuelve un token de dispositivo en vez de abrir una sesión web. */

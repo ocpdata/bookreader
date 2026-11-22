@@ -24,6 +24,8 @@ import { SummariesService } from './summaries.service';
 import {
   CreateSummaryDto,
   DuplicateQueryDto,
+  DriveFileDto,
+  DriveImportDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -49,6 +51,22 @@ export class SummariesController {
   @Get('duplicates')
   duplicates(@CurrentUser() userId: string, @Query() query: DuplicateQueryDto) {
     return this.summaries.duplicates(userId, query);
+  }
+
+  @Post('drive/inspect')
+  @HttpCode(200)
+  inspectDrive(@CurrentUser() userId: string, @Body() dto: DriveFileDto) {
+    return this.summaries.inspectDrive(userId, dto);
+  }
+
+  @Post(':id/drive-import')
+  @HttpCode(200)
+  importDrive(
+    @CurrentUser() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DriveImportDto,
+  ) {
+    return this.summaries.importDrive(id, userId, dto);
   }
 
   @Get(':id')

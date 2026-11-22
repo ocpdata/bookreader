@@ -18,7 +18,7 @@ export interface MailMessage {
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly driver = process.env.MAIL_DRIVER ?? (process.env.NODE_ENV === 'production' ? 'ses' : 'log');
-  private readonly from = process.env.MAIL_FROM ?? 'BookReader <no-responder@localhost>';
+  private readonly from = process.env.MAIL_FROM ?? 'BookBrief <no-responder@localhost>';
   private readonly configurationSet = process.env.SES_CONFIGURATION_SET;
   private ses?: SESv2Client;
 

@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import { createCategory, deleteCategory, listCategories, type CurrentUser } from './api'
 import { useAuth } from './auth'
 import AccountView from './components/AccountView'
+import AdminUsersView from './components/AdminUsersView'
 import BatchUploadView from './components/BatchUploadView'
 import ForgotPasswordView from './components/ForgotPasswordView'
 import HomeView from './components/HomeView'
@@ -95,9 +96,9 @@ export default function App() {
           <Stack component={RouterLink} to="/" direction="row" spacing={1.2}
             sx={{ alignItems: 'center', color: 'text.primary', textDecoration: 'none', flexShrink: 0 }}>
             <Box aria-hidden="true" sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: 'primary.main', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13 }}>
-              BR
+              BB
             </Box>
-            <Typography variant="h6">BookReader</Typography>
+            <Typography variant="h6">BookBrief</Typography>
           </Stack>
           {user && (
             <>
@@ -107,6 +108,7 @@ export default function App() {
                 <Button component={NavLink} to="/" end sx={navSx}>Inicio</Button>
                 <Button component={NavLink} to="/biblioteca" sx={navSx}>Biblioteca</Button>
                 <Button component={NavLink} to="/papelera" sx={navSx}>Papelera</Button>
+                {user.role === 'ADMIN' && <Button component={NavLink} to="/administracion" sx={navSx}>Administración</Button>}
               </Stack>
               <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
                 <Button component={NavLink} to="/cuenta" sx={{ ...navSx, maxWidth: { xs: 140, sm: 220 }, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -137,6 +139,7 @@ export default function App() {
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
+          <Route path="/administracion" element={<RequireAuth><AdminUsersView /></RequireAuth>} />
           <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/audios/lote" element={<RequireAuth><BatchUploadView categories={categories} /></RequireAuth>} />
           <Route path="/audios/:id" element={<RequireAuth><SummaryDetail /></RequireAuth>} />

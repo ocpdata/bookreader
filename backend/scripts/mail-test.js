@@ -24,10 +24,10 @@ new SESv2Client({ region: process.env.AWS_REGION })
       ConfigurationSetName: process.env.SES_CONFIGURATION_SET,
       Content: {
         Simple: {
-          Subject: { Data: 'Prueba de correo de BookReader', Charset: 'UTF-8' },
+          Subject: { Data: 'Prueba de correo de BookBrief', Charset: 'UTF-8' },
           Body: {
             Text: {
-              Data: 'Si lees esto, el envío de correo de BookReader funciona (dominio verificado y permisos correctos).',
+              Data: 'Si lees esto, el envío de correo de BookBrief funciona (dominio verificado y permisos correctos).',
               Charset: 'UTF-8',
             },
           },

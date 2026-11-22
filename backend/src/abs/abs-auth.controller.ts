@@ -34,7 +34,7 @@ export class AbsAuthController {
       isInit: true,
       language: 'es',
       authMethods: ['local'],
-      authFormData: { authLoginCustomMessage: 'Entra con el correo y la contraseña de tu cuenta de BookReader' },
+      authFormData: { authLoginCustomMessage: 'Entra con el correo y la contraseña de tu cuenta de BookBrief' },
     };
   }
 

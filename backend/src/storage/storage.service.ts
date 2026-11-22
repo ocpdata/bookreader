@@ -143,6 +143,13 @@ export class StorageService {
     return this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }));
   }
 
+  putAudioStream(key: string, body: Readable, contentType: string, sizeBytes: number, sha256: string) {
+    return this.s3.send(new PutObjectCommand({
+      Bucket: this.bucket, Key: key, Body: body, ContentType: contentType, ContentLength: sizeBytes,
+      ChecksumSHA256: Buffer.from(sha256, 'hex').toString('base64'),
+    }));
+  }
+
   /** Cuerpo del objeto como stream; lanza si no existe. */
   async getObjectStream(key: string): Promise<Readable> {
     const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));

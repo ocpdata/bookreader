@@ -14,6 +14,11 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum EmailTokenPurpose {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -35,6 +40,7 @@ model User {
   externalId        String?            @unique @map("external_id") @db.VarChar(64)
   // PENDIENTE hasta verificar el correo; SUSPENDIDO no puede entrar (ver scripts/user-admin.js).
   status            UserStatus         @default(ACTIVE)
+  role              UserRole           @default(USER)
   emailVerifiedAt   DateTime?          @map("email_verified_at")
   termsAcceptedAt   DateTime?          @map("terms_accepted_at")
   termsVersion      String?            @map("terms_version") @db.VarChar(20)
@@ -53,8 +59,25 @@ model User {
   playSessions      PlaySession[]
   bookmarks         Bookmark[]
   emailTokens       EmailToken[]
+  roleChangesMade   AdminRoleChange[]  @relation("RoleChangeActor")
+  roleChangesReceived AdminRoleChange[] @relation("RoleChangeTarget")
 
   @@map("users")
+}
+
+model AdminRoleChange {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  actorId    String   @map("actor_id") @db.VarChar(36)
+  targetId   String   @map("target_id") @db.VarChar(36)
+  previousRole UserRole @map("previous_role")
+  newRole    UserRole @map("new_role")
+  createdAt  DateTime @default(now()) @map("created_at")
+  actor      User     @relation("RoleChangeActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target     User     @relation("RoleChangeTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([targetId, createdAt])
+  @@map("admin_role_changes")
 }
 
 model Category {

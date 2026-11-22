@@ -68,7 +68,27 @@ export interface CurrentUser {
   email: string | null
   /** true si todavía no aceptó la versión vigente de los términos y del aviso de privacidad. */
   needsTerms: boolean
+  role: 'USER' | 'ADMIN'
+  isOwner: boolean
 }
+
+export interface AdminUser {
+  id: string
+  name: string
+  email: string | null
+  role: 'USER' | 'ADMIN'
+  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED'
+  isOwner: boolean
+}
+
+export const listAdminUsers = (page: number) =>
+  request<{ users: AdminUser[]; page: number; pageSize: number; total: number }>(`/admin/users?page=${page}`)
+
+export const changeUserRole = (id: string, role: AdminUser['role'], password: string) =>
+  request<{ id: string; role: AdminUser['role'] }>(`/admin/users/${encodeURIComponent(id)}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role, password }),
+  })
 
 export const acceptTerms = () => request<CurrentUser>('/auth/accept-terms', { method: 'POST' })
 
@@ -244,6 +264,22 @@ export function findDuplicates(sha256: string, title: string, author: string, up
 
 export const cancelPendingUpload = (id: string) =>
   request<void>(`/summaries/${id}/cancel-upload`, { method: 'POST' })
+
+export interface DriveSelection {
+  fileId: string
+  accessToken: string
+  resourceKey?: string
+}
+
+export const inspectDriveFile = (selection: DriveSelection) =>
+  request<{ id: string; name: string; size: number; version: string; sha256: string }>('/summaries/drive/inspect', {
+    method: 'POST', body: JSON.stringify(selection),
+  })
+
+export const importDriveFile = (id: string, selection: DriveSelection, version: string) =>
+  request<Summary>(`/summaries/${id}/drive-import`, {
+    method: 'POST', body: JSON.stringify({ ...selection, version }),
+  })
 
 export async function beginBatchItem(fields: SummaryFields, file: { name: string; size: number }, uploadRequestId: string, requestedSha256: string) {
   const contentType = audioContentType(file.name)

@@ -28,8 +28,8 @@ export function TermsView() {
       <Alert severity="warning" sx={{ mb: 3 }}>
         {DRAFT}
       </Alert>
-      <Section title="Qué es BookReader">
-        {'BookReader es un servicio para guardar tus propios audios de resúmenes de libros y escucharlos desde la web o desde aplicaciones compatibles con Audiobookshelf. Tu biblioteca es privada: solo tú la ves.'}
+      <Section title="Qué es BookBrief">
+        {'BookBrief es un servicio para guardar tus propios audios de resúmenes de libros y escucharlos desde la web o desde aplicaciones compatibles con Audiobookshelf. Tu biblioteca es privada: solo tú la ves.'}
       </Section>
       <Section title="Tu cuenta">
         {'Debes dar un correo propio y mantener segura tu contraseña. Eres responsable de lo que ocurra en tu cuenta. Puedes eliminarla en cualquier momento desde tu cuenta, o pidiéndolo a ' + CONTACT + '.'}
@@ -63,7 +63,7 @@ export function PrivacyView() {
         {DRAFT}
       </Alert>
       <Section title="Responsable">
-        {'El responsable del tratamiento de tus datos es el operador de BookReader. Contacto: ' + CONTACT + '.'}
+        {'El responsable del tratamiento de tus datos es el operador de BookBrief. Contacto: ' + CONTACT + '.'}
       </Section>
       <Section title="Qué datos guardamos">
         {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores y tu progreso de escucha.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
@@ -72,7 +72,7 @@ export function PrivacyView() {
         {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. No vendemos tus datos ni los usamos para publicidad.'}
       </Section>
       <Section title="Con quién se comparten">
-        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
+        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
       </Section>
       <Section title="Cookies">
         {'Solo usamos una cookie de sesión necesaria para mantenerte conectado. No usamos cookies de seguimiento ni publicidad.'}

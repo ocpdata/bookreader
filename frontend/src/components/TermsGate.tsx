@@ -48,7 +48,7 @@ export default function TermsGate() {
       <DialogTitle id="terms-title">Términos y aviso de privacidad</DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ mb: 2 }}>
-          Para seguir usando BookReader necesitas aceptar la versión vigente de los{' '}
+          Para seguir usando BookBrief necesitas aceptar la versión vigente de los{' '}
           <Link component={RouterLink} to="/terminos">
             términos de uso
           </Link>{' '}

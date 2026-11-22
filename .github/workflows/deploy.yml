@@ -1,6 +1,6 @@
 name: deploy
 
-# Manual: compila BookReader en GitHub, lo empaqueta y lo despliega en la VM por SSH.
+# Manual: compila BookBrief en GitHub, lo empaqueta y lo despliega en la VM por SSH.
 # Requiere que el workflow `infra` ya haya creado la VM y la RDS (apply=true).
 on:
   workflow_dispatch:
@@ -122,7 +122,7 @@ jobs:
             echo "PORT=3000"
             # Correo transaccional (SES). El remitente debe coincidir con mail_from_local_part de infra (no-responder).
             echo "MAIL_DRIVER=ses"
-            echo "MAIL_FROM=\"BookReader <no-responder@${APP_DOMAIN}>\""
+            echo "MAIL_FROM=\"BookBrief <no-responder@${APP_DOMAIN}>\""
             echo "SES_CONFIGURATION_SET=bookreader-correo"
             echo "APP_PUBLIC_URL=https://${APP_DOMAIN}"
             # closed | invite | open (variable de GitHub REGISTRATION_MODE; por defecto cerrado).

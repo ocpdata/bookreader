@@ -15,12 +15,15 @@ import { SessionService } from './session.service';
 import { SessionUserResolver } from './session-user.resolver';
 import { USER_RESOLVER } from './user.constants';
 import { UserGuard } from './user.guard';
+import { AdminController } from './admin.controller';
+import { AdminService } from './admin.service';
 
 @Global()
 @Module({
-  controllers: [AuthController, RegistrationController],
+  controllers: [AuthController, RegistrationController, AdminController],
   providers: [
     AuthService,
+    AdminService,
     PasswordService,
     SessionService,
     ApiTokenService,

@@ -176,6 +176,28 @@ export class DuplicateQueryDto {
   author?: string;
 }
 
+export class DriveFileDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,256}$/)
+  fileId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  accessToken!: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,256}$/)
+  resourceKey?: string;
+}
+
+export class DriveImportDto extends DriveFileDto {
+  @IsString()
+  @Matches(/^[0-9]{1,64}$/)
+  version!: string;
+}
+
 export const SORT_OPTIONS = ['recent', 'title', 'duration', 'listened'] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
 

@@ -1,4 +1,4 @@
-# BookReader
+# BookBrief
 
 Biblioteca personal de resúmenes de libros en audio (un solo usuario, uso local).
 
@@ -40,6 +40,16 @@ aws s3api put-bucket-cors --bucket <tu-bucket> --cors-configuration file://backe
 
 Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend ni al repo.
 
+### Importar desde Google Drive (opcional)
+
+En un proyecto de Google Cloud habilita Google Drive API y Google Picker API, configura la pantalla de consentimiento y crea un cliente OAuth de tipo aplicación web con los orígenes autorizados de BookBrief. Crea una clave de API para Picker restringida a la API y a los orígenes necesarios (incluido `https://docs.google.com/*`, según la documentación de Google). Copia `frontend/.env.example` a `frontend/.env.local` y configura `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_PICKER_API_KEY` y `VITE_GOOGLE_PROJECT_NUMBER`. Son valores públicos del cliente y Vite los incorpora al compilar: no pongas secretos en estas variables. Reinicia Vite o recompila el frontend después de configurarlos.
+
+La integración aparece solo si están configurados los tres valores. El usuario prepara el selector, autoriza el permiso `drive.file` y elige sus archivos. La aplicación no usa Google para iniciar sesión, no solicita acceso a toda la unidad y solo lee los archivos seleccionados. Google puede exigir verificación de la aplicación antes de publicarla; durante las pruebas hay que configurar los usuarios de prueba correspondientes.
+
+Cada archivo se lee desde Drive para calcular su huella y comprobar duplicados; al confirmar se lee nuevamente y se copia a S3, donde se valida su tamaño, huella y contenido. Si el archivo cambia o se revoca el acceso, la importación falla y se puede reintentar. La copia consume cuota, no sincroniza cambios posteriores y eliminarla no afecta el original de Drive. Mantén la página abierta: no hay trabajos de importación persistentes y no se guardan tokens de Google. Al regresar se deben seleccionar nuevamente los archivos pendientes; se puede revocar el permiso desde el botón de desconexión o desde la cuenta de Google. Una operación ya iniciada podría terminar aunque se cierre la página. Las cargas fallidas o canceladas siguen sujetas a la reserva y limpieza de pendientes.
+
+En la VM hay que actualizar la configuración Nginx generada por `scripts/setup_https.sh`: las dos rutas de Drive necesitan un plazo de espera mayor porque pueden leer hasta 200 MB.
+
 ## API
 
 | Método | Endpoint | Función |
@@ -51,6 +61,8 @@ Las credenciales AWS las toma el SDK de tu perfil local; nunca van al frontend n
 | GET | `/api/summaries/:id` | Consultar un resumen |
 | POST | `/api/summaries` | Crear registro `PENDING` y obtener URL de carga |
 | POST | `/api/summaries/:id/complete` | Verificar el objeto en S3, leer su duración real (rechaza archivos que no son audio) y marcar `READY` |
+| POST | `/api/summaries/drive/inspect` | Leer un archivo seleccionado de Google Drive y calcular su huella |
+| POST | `/api/summaries/:id/drive-import` | Copiar el archivo seleccionado a la reserva del usuario y completarla |
 | PATCH | `/api/summaries/:id` | Editar título, autor, título del resumen, narrador, categoría, descripción y etiquetas (`tags`; `[]` las quita todas) |
 | POST | `/api/summaries/:id/playback` | URL temporal de reproducción |
 | PUT | `/api/summaries/:id/progress` | Guardar la posición (`positionSeconds`) y/o `completed` |
@@ -84,7 +96,7 @@ En la biblioteca se puede elegir entre lista y cuadrícula; la preferencia se gu
 
 En Inicio y en la biblioteca, las tarjetas muestran hasta tres líneas de la descripción y permiten expandirla cuando no cabe completa.
 
-Al subir o editar un audio, «Buscar información en OpenLibrary.org» abre una búsqueda de título y autor en otra pestaña. La consulta y la dirección IP se envían a ese servicio solo al abrirla; BookReader no copia información ni portadas de los resultados. La portada manual o incrustada sigue disponible.
+Al subir o editar un audio, «Buscar información en OpenLibrary.org» abre una búsqueda de título y autor en otra pestaña. La consulta y la dirección IP se envían a ese servicio solo al abrirla; BookBrief no copia información ni portadas de los resultados. La portada manual o incrustada sigue disponible.
 
 Desde «Agregar resumen» se puede elegir «Subir varios audios». Cada archivo crea un resumen independiente: se revisan título, autor, categoría y carpeta y se comprueban posibles duplicados antes de subir. Los archivos idénticos se detectan por SHA-256; una coincidencia de título y autor solo indica un posible duplicado. Se comparan únicamente audios de la cuenta, también en la papelera, y el usuario decide si continúa. Si quedan audios antiguos sin huella se avisa de que la comprobación exacta está incompleta.
 
@@ -100,7 +112,7 @@ Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y la
 
 ## Apps compatibles con Audiobookshelf
 
-BookReader habla la API de Audiobookshelf (ABS) para que apps como **Absorb** (Android/iOS) y **AudioBooth** (iOS) puedan escuchar la biblioteca. En la app: servidor `https://audio.digitalvs.com`, usuario = el correo de la cuenta y la misma contraseña de la web. Se desactiva con `ABS_COMPAT_ENABLED=false`.
+BookBrief habla la API de Audiobookshelf (ABS) para que apps como **Absorb** (Android/iOS) y **AudioBooth** (iOS) puedan escuchar la biblioteca. En la app: servidor `https://audio.digitalvs.com`, usuario = el correo de la cuenta y la misma contraseña de la web. Se desactiva con `ABS_COMPAT_ENABLED=false`.
 
 - **Qué funciona**: una biblioteca "Resúmenes" con todos los audios del usuario (lista con orden, paginación y filtros por progreso, género=categoría, etiqueta, autor y narrador), detalle, búsqueda, inicio (continuar escuchando, agregados recientemente, escuchar de nuevo), autores y narradores, portadas, reproducción con progreso sincronizado con la web (sesiones `sync`/`close`, `PATCH /api/me/progress`, progreso grabado sin conexión) y ocultar de "continuar escuchando". Los **marcadores** se guardan por usuario y audio (se identifican por su posición, hasta 200 por audio) y viajan también en el objeto de usuario. Las **carpetas con audios** se ofrecen como colecciones de solo lectura (nombre = ruta completa, con sus audios directos). Las **descargas sin conexión** usan `GET /api/items/:id/file/:ino[/download]` (Bearer o `?token=`, con `Range` y `HEAD`; el `ino` sale de las pistas del detalle) y lo escuchado sin conexión se sincroniza. Las series y las listas de reproducción se devuelven vacías, y el historial y las estadísticas también. Las apps son de solo lectura: editar, borrar y subir se hace en la web (los permisos `update`, `delete` y `upload` van en `false`).
 - **Rutas**: viven en la raíz (`/ping`, `/status`, `/login`, `/logout`, `/public/session/...`) y bajo `/api` (`/api/libraries`, `/api/items`, `/api/me`, `/api/session`...), por eso la pantalla web de acceso pasó a `/entrar` (`GET /login` redirige).
@@ -151,6 +163,8 @@ Cada audio pertenece a un usuario y todas las consultas se filtran por él; un a
 - **Términos y privacidad**: al registrarse se guarda la versión aceptada (`TERMS_VERSION` en `registration.config.ts`; súbela cuando cambien los textos). `GET /api/auth/me` y el login devuelven `needsTerms`; si es verdadero, la web bloquea con un diálogo hasta que se acepta (`POST /api/auth/accept-terms`). Las cuentas anteriores al registro (y las creadas por CLI) lo ven en su primer acceso. Las apps compatibles no lo exigen.
 - **Retiro de contenido** (reclamaciones de derechos): desde la VM, `user-admin.js audios <correo>` lista los audios con su id, `remove-audio <id> --reason "..."` elimina uno al instante (archivo, portada y fila, sin papelera ni posibilidad de restaurarlo), `suspend <correo>` bloquea una cuenta reincidente y `delete-user <correo> --confirm` la elimina con todo. Estos comandos usan el código compilado (`dist/`), con las mismas salvaguardas que la aplicación; avisa a la persona por correo manualmente. El contacto para reclamaciones es el de los términos (`/terminos`).
 - **Administración**: el script crea cuentas ya verificadas, suspende (`suspend` cierra sus sesiones y apps; no entra ni recibe correos) y reactiva, y gestiona invitaciones; pide la contraseña sin eco (o `USER_ADMIN_PASSWORD`); nunca la pases por chat ni la dejes en el historial.
+- **Administradores**: la migración asigna `ADMIN` al propietario existente; los registros nuevos tienen `USER`. En Administración, los administradores activos pueden listar las cuentas; solo el propietario puede nombrar o retirar administradores, confirmando con su contraseña. No se puede cambiar el rol ni suspender o eliminar al propietario. Los cambios de rol se registran en `admin_role_changes` con identificadores de actor y cuenta, roles y fecha; no contienen contraseñas y se borran al eliminar cualquiera de las cuentas. Los permisos se comprueban en el servidor y los tokens de dispositivo no sirven para administrar.
+- **Acceso inicial y recuperación**: el propietario no recibe una contraseña predeterminada. Se le asignan correo y contraseña con `set-owner`; si ya tiene correo, debe ser el mismo. Para recuperar el acceso se puede usar `set-password` con ese correo desde la VM. Ambos comandos cierran las sesiones y apps vinculadas del propietario cuando cambian su contraseña.
 
 ```bash
 cd backend

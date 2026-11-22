@@ -12,11 +12,14 @@ import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
 import { CategoriesService } from '../categories/categories.service';
 import { hashAudio } from './audio-hash';
+import { DriveService } from './drive.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
 import {
   AUDIO_TYPES,
   CreateSummaryDto,
   DuplicateQueryDto,
+  DriveFileDto,
+  DriveImportDto,
   ListSummariesQuery,
   MoveSummariesDto,
   SaveProgressDto,
@@ -73,6 +76,7 @@ const emptyToNull = (value: string | undefined) => (value === undefined ? undefi
 @Injectable()
 export class SummariesService {
   private readonly logger = new Logger(SummariesService.name);
+  private readonly driveInFlight = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -82,6 +86,7 @@ export class SummariesService {
     private readonly quota: QuotaService,
     private readonly purge: PurgeService,
     private readonly categories: CategoriesService,
+    private readonly drive: DriveService,
   ) {}
 
   async list(
@@ -312,6 +317,44 @@ export class SummariesService {
       })),
       unchecked, truncated: rows.length > 50,
     };
+  }
+
+  private async withDriveLock<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+    if (this.driveInFlight.has(userId)) throw new ConflictException('Ya hay una operación de Google Drive en curso');
+    this.driveInFlight.add(userId);
+    try {
+      return await operation();
+    } finally {
+      this.driveInFlight.delete(userId);
+    }
+  }
+
+  inspectDrive(userId: string, dto: DriveFileDto) {
+    return this.withDriveLock(userId, () => this.drive.inspect(dto.fileId, dto.accessToken, dto.resourceKey));
+  }
+
+  importDrive(id: string, userId: string, dto: DriveImportDto) {
+    return this.withDriveLock(userId, () => this.copyDrive(id, userId, dto));
+  }
+
+  private async copyDrive(id: string, userId: string, dto: DriveImportDto) {
+    const summary = await this.get(id, userId);
+    if (summary.status === SummaryStatus.READY) return summary;
+    if (summary.cancelRequestedAt || summary.purgeClaimedAt) throw new ConflictException('Esta carga no está disponible');
+    if (!summary.requestedSha256) throw new BadRequestException('La importación requiere una huella verificada');
+    const file = await this.drive.metadata(dto.fileId, dto.accessToken, dto.resourceKey);
+    if (file.version !== dto.version || file.size !== summary.sizeBytes || file.name !== summary.originalFilename) {
+      throw new ConflictException('El archivo de Drive cambió. Selecciónalo y comprueba los duplicados de nuevo.');
+    }
+    const stream = await this.drive.stream(dto.fileId, dto.accessToken, file.size, dto.resourceKey);
+    try {
+      await this.storage.putAudioStream(summary.s3Key, stream, summary.contentType, file.size, summary.requestedSha256);
+    } catch (error) {
+      stream.destroy();
+      this.logger.warn(`No se pudo copiar el audio desde Drive: ${error instanceof Error ? error.name : 'error desconocido'}`);
+      throw new BadGatewayException('No se pudo copiar el archivo de Drive a S3 o su contenido cambió. Vuelve a seleccionarlo y comprueba los duplicados.');
+    }
+    return this.complete(id, userId);
   }
 
   async cancelPending(id: string, userId: string) {

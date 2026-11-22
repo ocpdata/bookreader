@@ -18,22 +18,22 @@ const text = (lines: (string | undefined)[]) => lines.filter((l) => l !== undefi
 
 export function verifyEmailMessage(name: string, url: string) {
   return {
-    subject: 'Verifica tu correo en BookReader',
+    subject: 'Verifica tu correo en BookBrief',
     text: text([
       `Hola ${name},`,
       '',
-      'Para activar tu cuenta de BookReader, abre este enlace (vale 24 horas):',
+      'Para activar tu cuenta de BookBrief, abre este enlace (vale 24 horas):',
       url,
       '',
       'Si no creaste una cuenta, ignora este correo: no se activará nada.',
     ]),
-    html: layout(`Hola ${name}`, ['Para activar tu cuenta de BookReader, verifica tu correo. El enlace vale 24 horas.'], { label: 'Verificar mi correo', url }, 'Si no creaste una cuenta, ignora este correo: no se activará nada.'),
+    html: layout(`Hola ${name}`, ['Para activar tu cuenta de BookBrief, verifica tu correo. El enlace vale 24 horas.'], { label: 'Verificar mi correo', url }, 'Si no creaste una cuenta, ignora este correo: no se activará nada.'),
   };
 }
 
 export function resetPasswordMessage(name: string, url: string) {
   return {
-    subject: 'Restablece tu contraseña de BookReader',
+    subject: 'Restablece tu contraseña de BookBrief',
     text: text([
       `Hola ${name},`,
       '',
@@ -48,44 +48,44 @@ export function resetPasswordMessage(name: string, url: string) {
 
 export function accountExistsMessage(name: string, loginUrl: string, resetUrl: string) {
   return {
-    subject: 'Ya tienes una cuenta en BookReader',
+    subject: 'Ya tienes una cuenta en BookBrief',
     text: text([
       `Hola ${name},`,
       '',
-      'Alguien intentó crear una cuenta con este correo, pero ya tienes una en BookReader.',
+      'Alguien intentó crear una cuenta con este correo, pero ya tienes una en BookBrief.',
       `Puedes entrar aquí: ${loginUrl}`,
       `Si olvidaste tu contraseña: ${resetUrl}`,
       '',
       'Si no fuiste tú, no tienes que hacer nada.',
     ]),
-    html: layout(`Hola ${name}`, ['Alguien intentó crear una cuenta con este correo, pero ya tienes una en BookReader.', 'Si olvidaste tu contraseña, puedes restablecerla.'], { label: 'Entrar a BookReader', url: loginUrl }, `Si no fuiste tú, no tienes que hacer nada. Restablecer contraseña: ${resetUrl}`),
+    html: layout(`Hola ${name}`, ['Alguien intentó crear una cuenta con este correo, pero ya tienes una en BookBrief.', 'Si olvidaste tu contraseña, puedes restablecerla.'], { label: 'Entrar a BookBrief', url: loginUrl }, `Si no fuiste tú, no tienes que hacer nada. Restablecer contraseña: ${resetUrl}`),
   };
 }
 
 export function passwordChangedMessage(name: string, resetUrl: string) {
   return {
-    subject: 'Tu contraseña de BookReader cambió',
+    subject: 'Tu contraseña de BookBrief cambió',
     text: text([
       `Hola ${name},`,
       '',
-      'La contraseña de tu cuenta de BookReader acaba de cambiar y se cerraron tus otras sesiones y apps vinculadas.',
+      'La contraseña de tu cuenta de BookBrief acaba de cambiar y se cerraron tus otras sesiones y apps vinculadas.',
       `Si no fuiste tú, restablécela de inmediato: ${resetUrl}`,
     ]),
-    html: layout(`Hola ${name}`, ['La contraseña de tu cuenta de BookReader acaba de cambiar y se cerraron tus otras sesiones y apps vinculadas.', 'Si no fuiste tú, restablécela de inmediato.'], { label: 'Restablecer mi contraseña', url: resetUrl }),
+    html: layout(`Hola ${name}`, ['La contraseña de tu cuenta de BookBrief acaba de cambiar y se cerraron tus otras sesiones y apps vinculadas.', 'Si no fuiste tú, restablécela de inmediato.'], { label: 'Restablecer mi contraseña', url: resetUrl }),
   };
 }
 
 export function accountDeletedMessage(name: string) {
   return {
-    subject: 'Eliminamos tu cuenta de BookReader',
+    subject: 'Eliminamos tu cuenta de BookBrief',
     text: text([
       `Hola ${name},`,
       '',
-      'Tu cuenta de BookReader y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.',
+      'Tu cuenta de BookBrief y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.',
       'Las copias técnicas de los archivos pueden tardar hasta 14 días en desaparecer por completo.',
       '',
       'Si no fuiste tú, responde a este correo cuanto antes.',
     ]),
-    html: layout(`Hola ${name}`, ['Tu cuenta de BookReader y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.', 'Las copias técnicas de los archivos pueden tardar hasta 14 días en desaparecer por completo.'], undefined, 'Si no fuiste tú, responde a este correo cuanto antes.'),
+    html: layout(`Hola ${name}`, ['Tu cuenta de BookBrief y todo su contenido (audios, portadas, carpetas, marcadores y progreso) se eliminaron a petición tuya.', 'Las copias técnicas de los archivos pueden tardar hasta 14 días en desaparecer por completo.'], undefined, 'Si no fuiste tú, responde a este correo cuanto antes.'),
   };
 }

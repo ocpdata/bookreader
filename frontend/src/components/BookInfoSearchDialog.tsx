@@ -37,7 +37,7 @@ export default function BookInfoSearchDialog({ title, author, onClose }: Props) 
             slotProps={{ htmlInput: { maxLength: 200 } }} fullWidth />
           <Alert severity="info">
             Al abrir la búsqueda se enviarán el título y autor indicados y tu dirección IP a Open Library.
-            BookReader no copia información ni portadas automáticamente.
+            BookBrief no copia información ni portadas automáticamente.
           </Alert>
         </Stack>
       </DialogContent>

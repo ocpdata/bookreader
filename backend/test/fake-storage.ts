@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { PassThrough, Readable } from 'node:stream';
 import { StorageService } from '../src/storage/storage.service';
 
 export const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', name));
@@ -48,6 +49,15 @@ export class FakeStorage {
   createPlaybackUrl = async (key: string) => `https://s3.test/play/${key}`;
   getObjectSize = async (key: string) => this.objects.get(key)?.length ?? null;
   putObject = async (key: string, body: Buffer) => {
+    this.objects.set(key, body);
+  };
+  putAudioStream = async (key: string, stream: Readable, _contentType: string, size: number, sha256: string) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    if (body.length !== size || createHash('sha256').update(body).digest('hex') !== sha256) {
+      throw new Error('ChecksumMismatch');
+    }
     this.objects.set(key, body);
   };
   /** Como S3: con Range devuelve 206 y el tramo pedido; un inicio fuera del archivo lanza InvalidRange. */

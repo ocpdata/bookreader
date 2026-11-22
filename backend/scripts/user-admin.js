@@ -106,10 +106,15 @@ const commands = {
     if (owner.email && owner.email !== email) throw new Error(`El propietario ya tiene el correo ${owner.email}`);
     const taken = await prisma.user.findUnique({ where: { email } });
     if (taken && taken.id !== OWNER_ID) throw new Error('Ese correo ya pertenece a otro usuario');
-    await prisma.user.update({
-      where: { id: OWNER_ID },
-      data: { email, name: name?.trim() || owner.name, passwordHash: await passwordHash(), status: 'ACTIVE', emailVerifiedAt: owner.emailVerifiedAt ?? new Date() },
-    });
+    const hash = await passwordHash();
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: OWNER_ID },
+        data: { email, name: name?.trim() || owner.name, passwordHash: hash, status: 'ACTIVE', emailVerifiedAt: owner.emailVerifiedAt ?? new Date() },
+      }),
+      prisma.session.deleteMany({ where: { userId: OWNER_ID } }),
+      prisma.apiToken.deleteMany({ where: { userId: OWNER_ID } }),
+    ]);
     console.log(`Propietario listo: ${email} (conserva todos sus audios).`);
   },
 

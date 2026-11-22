@@ -7,6 +7,6 @@ export function registrationMode(): RegistrationMode {
 }
 
 /** Versión de los términos y del aviso de privacidad que aceptan las personas al registrarse. */
-export const TERMS_VERSION = '2026-11-15.1';
+export const TERMS_VERSION = '2026-11-15.3';
 
 export const appUrl = (path: string) => `${(process.env.APP_PUBLIC_URL ?? 'http://localhost:5500').replace(/\/$/, '')}${path}`;

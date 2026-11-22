@@ -10,6 +10,8 @@ import { DEFAULT_USER_ID, USER_RESOLVER } from '../src/auth/user.constants';
 import { StorageService } from '../src/storage/storage.service';
 import { PurgeService } from '../src/summaries/purge.service';
 import { HashBackfillService } from '../src/summaries/hash-backfill.service';
+import { DriveService } from '../src/summaries/drive.service';
+import { Readable } from 'node:stream';
 import { FakeStorage, fixture } from './fake-storage';
 import { sharedCategory } from './shared-category';
 
@@ -21,6 +23,7 @@ describe('Summaries (e2e)', () => {
   let storage: FakeStorage;
   let purge: PurgeService;
   let backfill: HashBackfillService;
+  let drive: DriveService;
   let categoryId: string;
 
   const as = (userId: string | undefined) => ({ 'x-test-user': userId ?? '' });
@@ -67,6 +70,7 @@ describe('Summaries (e2e)', () => {
       .compile();
     purge = module.get(PurgeService);
     backfill = module.get(HashBackfillService);
+    drive = module.get(DriveService);
     app = module.createNestApplication();
     configureApp(app);
     await app.init();
@@ -88,6 +92,8 @@ describe('Summaries (e2e)', () => {
     await prisma.folder.deleteMany();
     await prisma.tag.deleteMany();
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   afterAll(async () => {
     await prisma.summary.deleteMany();
@@ -203,6 +209,78 @@ describe('Summaries (e2e)', () => {
     storage.objects.set(created.body.summary.s3Key, fixture('sample.mp3'));
     await request(app.getHttpServer()).post(`/api/summaries/${id}/complete`).set(as(DEFAULT_USER_ID)).expect(400);
     expect((await prisma.summary.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING');
+  });
+
+  it('importa desde Drive solo para el dueño y reutiliza la reserva al reintentar', async () => {
+    const bytes = fixture('sample.mp3');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    const metadata = jest.spyOn(drive, 'metadata').mockResolvedValue({
+      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: selection.version,
+    });
+    jest.spyOn(drive, 'stream').mockResolvedValue(Readable.from([bytes]));
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
+    const id = created.body.summary.id;
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/drive-import`).set(as(USER_B)).send(selection).expect(404);
+    expect(metadata).not.toHaveBeenCalled();
+    const result = await request(app.getHttpServer())
+      .post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID)).send(selection).expect(200);
+    expect(result.body).toMatchObject({ status: 'READY', audioSha256: hash });
+    await request(app.getHttpServer())
+      .post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID)).send(selection).expect(200);
+    expect(metadata).toHaveBeenCalledTimes(1);
+    expect(await prisma.summary.count({ where: { userId: DEFAULT_USER_ID } })).toBe(1);
+  });
+
+  it('exige sesión y un identificador de Drive válido antes de inspeccionar', async () => {
+    const inspect = jest.spyOn(drive, 'inspect');
+    await request(app.getHttpServer()).post('/api/summaries/drive/inspect')
+      .set(as(undefined)).send({ fileId: 'drive_file', accessToken: 'token' }).expect(401);
+    await request(app.getHttpServer()).post('/api/summaries/drive/inspect')
+      .set(as(DEFAULT_USER_ID)).send({ fileId: '../otro', accessToken: 'token' }).expect(400);
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it('no completa la importación si Drive cambia después de la comprobación', async () => {
+    const bytes = fixture('sample.mp3');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    jest.spyOn(drive, 'metadata').mockResolvedValue({
+      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: '2',
+    });
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
+    const id = created.body.summary.id;
+    await request(app.getHttpServer())
+      .post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID)).send(selection).expect(409);
+    expect((await prisma.summary.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING');
+    expect(storage.objects.size).toBe(0);
+  });
+
+  it('rechaza bytes distintos aunque Drive conserve el mismo tamaño y versión', async () => {
+    const bytes = fixture('sample.mp3');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const selection = { fileId: 'drive_file', accessToken: 'token-de-prueba', version: '1' };
+    jest.spyOn(drive, 'metadata').mockResolvedValue({
+      id: selection.fileId, name: 'habitos.mp3', size: bytes.length, version: '1',
+    });
+    jest.spyOn(drive, 'stream').mockResolvedValue(Readable.from([Buffer.alloc(bytes.length)]));
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
+    const id = created.body.summary.id;
+    await request(app.getHttpServer())
+      .post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID)).send(selection).expect(502);
+    expect((await prisma.summary.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING');
+    expect(storage.objects.size).toBe(0);
+  });
+
+  it('no copia una importación cancelada', async () => {
+    const hash = createHash('sha256').update(fixture('sample.mp3')).digest('hex');
+    const created = await createSummary(DEFAULT_USER_ID, { uploadRequestId: randomUUID(), requestedSha256: hash });
+    const id = created.body.summary.id;
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/cancel-upload`).set(as(DEFAULT_USER_ID)).expect(204);
+    const metadata = jest.spyOn(drive, 'metadata');
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/drive-import`).set(as(DEFAULT_USER_ID))
+      .send({ fileId: 'drive_file', accessToken: 'token', version: '1' }).expect(409);
+    expect(metadata).not.toHaveBeenCalled();
   });
 
   it('compara huellas verificadas y metadatos solo dentro de la cuenta, incluida la papelera', async () => {

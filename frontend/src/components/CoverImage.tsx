@@ -31,7 +31,7 @@ export default function CoverImage({ src, title, seed, size, large = false, auth
     >
       {large ? (
         <Box sx={{ width: '100%', height: '100%', p: 2.5, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left', color: '#fff' }}>
-          <Typography sx={{ fontSize: 11, letterSpacing: '0.12em', fontWeight: 700 }}>BOOKREADER</Typography>
+          <Typography sx={{ fontSize: 11, letterSpacing: '0.12em', fontWeight: 700 }}>BOOKBRIEF</Typography>
           <Box>
             <Typography sx={{ fontSize: 'clamp(1rem, 2vw, 1.35rem)', fontWeight: 700, lineHeight: 1.2, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>
               {title}

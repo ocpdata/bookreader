@@ -91,10 +91,40 @@ describe('Autenticación (e2e)', () => {
     await api().post('/api/auth/logout').expect(204);
   });
 
+  it('el propietario asigna y revoca administradores con confirmación y auditoría', async () => {
+    const ownerEmail = 'propietario@auth.test';
+    await prisma.user.update({
+      where: { id: DEFAULT_USER_ID },
+      data: { email: ownerEmail, passwordHash: bcrypt.hashSync(PASSWORD, 4), status: 'ACTIVE' },
+    });
+    const target = await createUser();
+    try {
+      expect(target.role).toBe('USER');
+      const ownerSession = await login(ownerEmail);
+      expect(ownerSession.body).toMatchObject({ role: 'ADMIN', isOwner: true });
+      const targetSession = await login(target.email!);
+      await api().get('/api/admin/users').set('Cookie', targetSession.cookie).expect(403);
+      await api().patch(`/api/admin/users/${target.id}/role`).set('Cookie', ownerSession.cookie)
+        .send({ role: 'ADMIN', password: 'incorrecta' }).expect(400);
+      await api().patch(`/api/admin/users/${target.id}/role`).set('Cookie', ownerSession.cookie)
+        .send({ role: 'ADMIN', password: PASSWORD }).expect(200);
+      expect(await prisma.adminRoleChange.findFirst({ where: { targetId: target.id } }))
+        .toMatchObject({ actorId: DEFAULT_USER_ID, previousRole: 'USER', newRole: 'ADMIN' });
+      await api().get('/api/admin/users').set('Cookie', targetSession.cookie).expect(200);
+      await api().patch(`/api/admin/users/${target.id}/role`).set('Cookie', ownerSession.cookie)
+        .send({ role: 'USER', password: PASSWORD }).expect(200);
+      await api().get('/api/admin/users').set('Cookie', targetSession.cookie).expect(403);
+      await prisma.user.delete({ where: { id: target.id } });
+      expect(await prisma.adminRoleChange.count({ where: { targetId: target.id } })).toBe(0);
+    } finally {
+      await prisma.adminRoleChange.deleteMany({ where: { targetId: target.id } });
+    }
+  });
+
   it('inicia sesión con cookie httpOnly y sin exponer la contraseña ni el token en la base', async () => {
     const user = await createUser('Dueña@Auth.test');
     const { cookie, raw, body } = await login('  dueña@auth.TEST  '); // el correo se normaliza
-    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test', needsTerms: true });
+    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test', needsTerms: true, role: 'USER', isOwner: false });
     expect(JSON.stringify(body)).not.toMatch(/hash|password/i);
     expect(raw).toMatch(/^br_session=[A-Za-z0-9_-]{43}/);
     expect(raw).toMatch(/HttpOnly/i);
@@ -284,7 +314,10 @@ describe('Autenticación (e2e)', () => {
       expect(owner).toMatchObject({ email: 'dueño@auth.test', name: 'Oscar' });
       expect(bcrypt.compareSync(PASSWORD, owner.passwordHash!)).toBe(true);
       expect(owner.passwordHash).not.toContain(PASSWORD);
-      await login('dueño@auth.test'); // ya puede iniciar sesión
+      const { cookie } = await login('dueño@auth.test'); // ya puede iniciar sesión
+      expect(run(['set-owner', 'dueño@auth.test', 'Oscar'], 'contraseña-nueva-9876').status).toBe(0);
+      await api().get('/api/auth/me').set('Cookie', cookie).expect(401);
+      await login('dueño@auth.test', 'contraseña-nueva-9876');
 
       // No se puede reasignar a otro correo sin querer, ni usar uno ajeno.
       expect(run(['set-owner', 'otro@auth.test', 'Otro'], PASSWORD).status).toBe(1);

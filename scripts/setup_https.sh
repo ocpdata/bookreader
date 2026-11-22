@@ -83,6 +83,12 @@ server {
         ${proxy_common}
     }
 
+    # La inspección y copia desde Drive pueden tardar más que una petición normal.
+    location ~ ^/api/summaries/(drive/inspect|[0-9a-fA-F-]{36}/drive-import)\$ {
+        ${proxy_common}
+        proxy_read_timeout 1800s;
+    }
+
     # Descargas de audio para escuchar sin conexión: se transmiten sin búfer en disco y con lecturas largas.
     location ~ ^/api/items/[^/]+/file/ {
         ${proxy_common}
