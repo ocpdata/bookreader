@@ -6,7 +6,7 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { deleteSummary, getPlaybackUrl, getSummary, resetProgress, saveProgress, setFavorite } from '../api'
+import { deleteSummary, getPlaybackUrl, getSummary, recordListening, resetProgress, saveProgress, setFavorite } from '../api'
 import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
@@ -20,6 +20,7 @@ export default function SummaryDetail() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
+  const [statisticsError, setStatisticsError] = useState('')
   const [progress, setProgress] = useState<Progress | null>(null)
   const [startAt, setStartAt] = useState(0)
   const [playerKey, setPlayerKey] = useState(0)
@@ -69,6 +70,18 @@ export default function SummaryDetail() {
     saveProgress(id, { positionSeconds, ...(options.completed ? { completed: true } : {}) }, options.keepalive)
       .then(setProgress)
       .catch(() => undefined)
+  }
+
+  const handleListening = (durationMs: number, keepalive: boolean) => {
+    const event = { id: crypto.randomUUID(), summaryId: id, durationMs }
+    recordListening(event, keepalive).catch(() => {
+      setTimeout(() => {
+        recordListening(event, keepalive).catch((error: Error) => {
+          console.error('No se pudo guardar la escucha:', error.message)
+          setStatisticsError('No se pudo guardar parte de la escucha en tus estadísticas.')
+        })
+      }, 2000)
+    })
   }
 
   async function setCompleted(completed: boolean) {
@@ -131,6 +144,7 @@ export default function SummaryDetail() {
         ← Volver
       </Button>
       {error && <Alert severity="error">{error}</Alert>}
+      {statisticsError && <Alert severity="warning">{statisticsError}</Alert>}
       {!summary && !error && <CircularProgress size={28} />}
       {summary && (
         <>
@@ -185,6 +199,7 @@ export default function SummaryDetail() {
               durationSeconds={summary.durationSeconds}
               startAt={startAt}
               onProgress={handleProgress}
+              onListening={handleListening}
               onError={handleAudioError}
             />
           )}

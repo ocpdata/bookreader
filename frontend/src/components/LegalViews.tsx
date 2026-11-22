@@ -66,10 +66,10 @@ export function PrivacyView() {
         {'El responsable del tratamiento de tus datos es el operador de BookBrief. Contacto: ' + CONTACT + '.'}
       </Section>
       <Section title="Qué datos guardamos">
-        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores y tu progreso de escucha.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
+        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores, progreso e historial de tiempo de escucha.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
       </Section>
       <Section title="Para qué los usamos">
-        {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. No vendemos tus datos ni los usamos para publicidad.'}
+        {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), mostrar estadísticas personales y administrativas de uso, enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. Los administradores pueden consultar tus estadísticas y los títulos escuchados. No vendemos tus datos ni los usamos para publicidad.'}
       </Section>
       <Section title="Con quién se comparten">
         {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
@@ -81,7 +81,7 @@ export function PrivacyView() {
         {'Puedes acceder, rectificar, cancelar u oponerte al tratamiento de tus datos. Puedes eliminar tu cuenta y todo tu contenido desde tu cuenta, o pedirlo a ' + CONTACT + '.'}
       </Section>
       <Section title="Conservación">
-        {'Conservamos tus datos mientras tengas la cuenta. Lo que borras pasa a la papelera 30 días y después se elimina definitivamente (las copias de seguridad técnicas pueden tardar hasta 14 días más en desaparecer).'}
+        {'Conservamos tus datos y tu historial de escucha mientras tengas la cuenta. Al eliminar definitivamente un audio se elimina también su historial. Lo que borras pasa a la papelera 30 días y después se elimina definitivamente (las copias de seguridad técnicas pueden tardar hasta 14 días más en desaparecer).'}
       </Section>
     </Container>
   )

@@ -90,6 +90,34 @@ export const changeUserRole = (id: string, role: AdminUser['role'], password: st
     body: JSON.stringify({ role, password }),
   })
 
+export type StatisticsPeriod = 'today' | 'week' | 'month'
+
+export interface PersonalStatistics {
+  saved: number
+  inProgress: number
+  finished: number
+  favorites: number
+  storageBytes: number
+  storageAudios: number
+  durationMs: number
+  days: { date: string; durationMs: number }[]
+  titles: { id: string; title: string; durationMs: number }[]
+}
+
+export const recordListening = (event: { id: string; summaryId: string; durationMs: number }, keepalive = false) =>
+  request<void>('/statistics/listening', { method: 'POST', body: JSON.stringify(event), keepalive })
+
+export const getMyStatistics = (period: StatisticsPeriod) =>
+  request<PersonalStatistics>(`/statistics/me?period=${period}`)
+
+export const getAdminStatistics = (period: StatisticsPeriod) =>
+  request<{ registered: number; activeListeners: number; durationMs: number }>(`/statistics/admin?period=${period}`)
+
+export const getUserStatistics = (id: string, period: StatisticsPeriod) =>
+  request<{ user: { id: string; name: string; email: string | null; lastLoginAt: string | null }; statistics: PersonalStatistics }>(
+    `/statistics/admin/users/${encodeURIComponent(id)}?period=${period}`,
+  )
+
 export const acceptTerms = () => request<CurrentUser>('/auth/accept-terms', { method: 'POST' })
 
 /** Elimina la cuenta y todo su contenido; la contraseña mala es un 400 (no cierra la sesión). */

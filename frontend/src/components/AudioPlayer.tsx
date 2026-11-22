@@ -7,6 +7,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { formatClock } from '../format'
+import { ListeningClock } from '../listeningClock'
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 const RATE_KEY = 'bookreader.playbackRate'
@@ -31,6 +32,7 @@ interface Props {
   startAt?: number
   /** Guarda la posición: cada 10 s sonando, al pausar, saltar, terminar y al cerrar la pestaña. */
   onProgress?: (positionSeconds: number, options: SaveOptions) => void
+  onListening?: (durationMs: number, keepalive: boolean) => void
   /** Se llama si el audio falla (por ejemplo, URL temporal caducada). */
   onError?: () => void
 }
@@ -40,7 +42,7 @@ function loadRate(): number {
   return RATES.includes(saved) ? saved : 1
 }
 
-export default function AudioPlayer({ src, title, artist, artwork, durationSeconds, startAt = 0, onProgress, onError }: Props) {
+export default function AudioPlayer({ src, title, artist, artwork, durationSeconds, startAt = 0, onProgress, onListening, onError }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const resumeAt = useRef(startAt)
   const lastSaveAt = useRef(0)
@@ -52,6 +54,9 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
   const resumeTarget = useRef<number | null>(null)
   const onProgressRef = useRef(onProgress)
   onProgressRef.current = onProgress
+  const onListeningRef = useRef(onListening)
+  onListeningRef.current = onListening
+  const listeningClock = useRef(new ListeningClock())
 
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(startAt)
@@ -69,6 +74,12 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
   }
   const flushRef = useRef(flush)
   flushRef.current = flush
+
+  const collectListening = (stop: boolean, keepalive = false) => {
+    for (const chunk of listeningClock.current.collect(performance.now(), stop)) onListeningRef.current?.(chunk, keepalive)
+  }
+  const listeningRef = useRef(collectListening)
+  listeningRef.current = collectListening
 
   const seekBy = (delta: number) => {
     const audio = audioRef.current
@@ -91,7 +102,10 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
 
   // Al ocultar o cerrar la pestaña y al salir de la pantalla se guarda con "keepalive".
   useEffect(() => {
-    const save = () => flushRef.current({ keepalive: true })
+    const save = () => {
+      flushRef.current({ keepalive: true })
+      listeningRef.current(false, true)
+    }
     const onVisibility = () => document.visibilityState === 'hidden' && save()
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('pagehide', save)
@@ -99,6 +113,7 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', save)
       save()
+      listeningRef.current(true, true)
     }
   }, [])
 
@@ -139,12 +154,17 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
         src={src}
         preload="metadata"
         onPlay={() => setPlaying(true)}
+        onPlaying={() => listeningClock.current.start(performance.now())}
+        onWaiting={() => collectListening(true)}
+        onSeeking={() => collectListening(true)}
         onPause={(e) => {
+          collectListening(true)
           position.current = e.currentTarget.currentTime
           setPlaying(false)
           flush()
         }}
         onEnded={(e) => {
+          collectListening(true)
           position.current = e.currentTarget.currentTime
           setPlaying(false)
           dirty.current = true
@@ -155,6 +175,7 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
           position.current = reached
           const target = resumeTarget.current
           resumeTarget.current = null
+          if (!e.currentTarget.paused && e.currentTarget.readyState >= 3) listeningClock.current.start(performance.now())
           if (target !== null && Math.abs(reached - target) < 0.75) return
           dirty.current = true
           flush()
@@ -164,6 +185,7 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
           setCurrent(audio.currentTime)
           position.current = audio.currentTime
           if (audio.paused) return
+          collectListening(false)
           dirty.current = true
           if (Date.now() - lastSaveAt.current >= SAVE_EVERY_MS) flush()
         }}
@@ -180,6 +202,7 @@ export default function AudioPlayer({ src, title, artist, artwork, durationSecon
           resumeAt.current = 0
         }}
         onError={() => {
+          collectListening(true)
           resumeAt.current = audioRef.current?.currentTime ?? 0
           onError?.()
         }}

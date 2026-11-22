@@ -23,6 +23,7 @@ import RegisterView from './components/RegisterView'
 import ResetPasswordView from './components/ResetPasswordView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
+import StatisticsView from './components/StatisticsView'
 import TermsGate from './components/TermsGate'
 import TrashView from './components/TrashView'
 import VerifyEmailView from './components/VerifyEmailView'
@@ -107,6 +108,7 @@ export default function App() {
                 sx={{ order: { xs: 3, md: 0 }, flexBasis: { xs: '100%', md: 'auto' }, overflowX: 'auto' }}>
                 <Button component={NavLink} to="/" end sx={navSx}>Inicio</Button>
                 <Button component={NavLink} to="/biblioteca" sx={navSx}>Biblioteca</Button>
+                <Button component={NavLink} to="/estadisticas" sx={navSx}>Estadísticas</Button>
                 <Button component={NavLink} to="/papelera" sx={navSx}>Papelera</Button>
                 {user.role === 'ADMIN' && <Button component={NavLink} to="/administracion" sx={navSx}>Administración</Button>}
               </Stack>
@@ -139,7 +141,10 @@ export default function App() {
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
+          <Route path="/estadisticas" element={<RequireAuth><StatisticsView /></RequireAuth>} />
           <Route path="/administracion" element={<RequireAuth><AdminUsersView /></RequireAuth>} />
+          <Route path="/administracion/estadisticas" element={<RequireAuth><StatisticsView admin /></RequireAuth>} />
+          <Route path="/administracion/usuarios/:id/estadisticas" element={<RequireAuth><StatisticsView admin /></RequireAuth>} />
           <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/audios/lote" element={<RequireAuth><BatchUploadView categories={categories} /></RequireAuth>} />
           <Route path="/audios/:id" element={<RequireAuth><SummaryDetail /></RequireAuth>} />

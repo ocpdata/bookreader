@@ -57,6 +57,7 @@ model User {
   categories        Category[]
   apiTokens         ApiToken[]
   playSessions      PlaySession[]
+  listeningEvents   ListeningEvent[]
   bookmarks         Bookmark[]
   emailTokens       EmailToken[]
   roleChangesMade   AdminRoleChange[]  @relation("RoleChangeActor")
@@ -103,6 +104,7 @@ model Summary {
   tags             SummaryTag[]
   favorites        Favorite[]
   playSessions     PlaySession[]
+  listeningEvents  ListeningEvent[]
   bookmarks        Bookmark[]
   title            String             @db.VarChar(200)
   author           String             @db.VarChar(200)
@@ -266,6 +268,21 @@ model PlaySession {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@map("play_sessions")
+}
+
+model ListeningEvent {
+  id         String   @id @db.VarChar(36)
+  userId     String   @map("user_id") @db.VarChar(36)
+  summaryId  String   @map("summary_id") @db.VarChar(36)
+  durationMs Int      @map("duration_ms")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  summary    Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([occurredAt, userId])
+  @@index([summaryId])
+  @@map("listening_events")
 }
 
 // Marcador de un usuario en un audio (apps compatibles con Audiobookshelf). El tiempo en segundos, con milisegundos,

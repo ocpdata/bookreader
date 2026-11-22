@@ -121,6 +121,49 @@ describe('Autenticación (e2e)', () => {
     }
   });
 
+  it('registra escucha idempotente y protege las estadísticas personales y administrativas', async () => {
+    const ownerEmail = 'propietario@auth.test';
+    await prisma.user.update({
+      where: { id: DEFAULT_USER_ID },
+      data: { email: ownerEmail, passwordHash: bcrypt.hashSync(PASSWORD, 4), status: 'ACTIVE', role: 'ADMIN' },
+    });
+    const user = await createUser();
+    const other = await createUser();
+    const ownerSession = await login(ownerEmail);
+    const session = await login(user.email!);
+    const otherSession = await login(other.email!);
+    const summary = await prisma.summary.create({
+      data: {
+        userId: user.id, title: 'Audio de prueba', author: 'Autora', categoryId,
+        s3Key: `prueba/${crypto.randomUUID()}`, originalFilename: 'prueba.mp3',
+        sizeBytes: 120, contentType: 'audio/mpeg', status: 'READY', durationSeconds: 100,
+      },
+    });
+    const event = { id: crypto.randomUUID(), summaryId: summary.id, durationMs: 12000 };
+
+    await api().post('/api/statistics/listening').send(event).expect(401);
+    await api().post('/api/statistics/listening').set('Cookie', otherSession.cookie).send(event).expect(404);
+    await api().post('/api/statistics/listening').set('Cookie', session.cookie).send({ ...event, durationMs: 60001 }).expect(400);
+    await api().post('/api/statistics/listening').set('Cookie', session.cookie).send(event).expect(204);
+    await api().post('/api/statistics/listening').set('Cookie', session.cookie).send(event).expect(204);
+    await api().post('/api/statistics/listening').set('Cookie', session.cookie).send({ ...event, durationMs: 11000 }).expect(400);
+    const mine = await api().get('/api/statistics/me?period=today').set('Cookie', session.cookie).expect(200);
+    expect(mine.body).toMatchObject({
+      saved: 1, durationMs: 12000, storageBytes: 120, titles: [{ id: summary.id, title: summary.title, durationMs: 12000 }],
+    });
+    const otherStats = await api().get('/api/statistics/me?period=today').set('Cookie', otherSession.cookie).expect(200);
+    expect(otherStats.body.durationMs).toBe(0);
+    await api().get('/api/statistics/me?period=invalid').set('Cookie', session.cookie).expect(400);
+    await api().get('/api/statistics/admin').set('Cookie', session.cookie).expect(403);
+    await api().get(`/api/statistics/admin/users/${user.id}`).set('Cookie', otherSession.cookie).expect(403);
+    const adminStats = await api().get('/api/statistics/admin?period=today').set('Cookie', ownerSession.cookie).expect(200);
+    expect(adminStats.body).toMatchObject({ activeListeners: 1, durationMs: 12000 });
+    const detail = await api().get(`/api/statistics/admin/users/${user.id}?period=today`).set('Cookie', ownerSession.cookie).expect(200);
+    expect(detail.body).toMatchObject({ user: { id: user.id }, statistics: { durationMs: 12000 } });
+    await prisma.summary.delete({ where: { id: summary.id } });
+    expect(await prisma.listeningEvent.count({ where: { userId: user.id } })).toBe(0);
+  });
+
   it('inicia sesión con cookie httpOnly y sin exponer la contraseña ni el token en la base', async () => {
     const user = await createUser('Dueña@Auth.test');
     const { cookie, raw, body } = await login('  dueña@auth.TEST  '); // el correo se normaliza

@@ -15,7 +15,7 @@ export class AdminService {
     private readonly limiter: LoginRateLimiter,
   ) {}
 
-  private async requireAdmin(userId: string) {
+  async requireAdmin(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status !== UserStatus.ACTIVE || user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Se requiere una cuenta administradora activa');

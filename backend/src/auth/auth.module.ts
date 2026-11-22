@@ -37,6 +37,6 @@ import { AdminService } from './admin.service';
     { provide: APP_GUARD, useClass: OriginGuard },
     { provide: APP_GUARD, useClass: UserGuard },
   ],
-  exports: [AuthService, ApiTokenService, LoginRateLimiter],
+  exports: [AuthService, AdminService, ApiTokenService, LoginRateLimiter],
 })
 export class AuthModule {}

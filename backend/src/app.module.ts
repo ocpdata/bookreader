@@ -12,6 +12,7 @@ import { TagsModule } from './tags/tags.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SummariesModule } from './summaries/summaries.module';
 import { HealthController } from './health/health.controller';
+import { StatisticsModule } from './statistics/statistics.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { HealthController } from './health/health.controller';
     FoldersModule,
     CategoriesModule,
     SummariesModule,
+    StatisticsModule,
     ...(process.env.ABS_COMPAT_ENABLED === 'false' ? [] : [AbsCompatModule]),
   ],
   controllers: [HealthController],

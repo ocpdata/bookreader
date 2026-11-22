@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link as RouterLink } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -73,6 +74,7 @@ export default function AdminUsersView() {
   return (
     <Stack spacing={2} sx={{ maxWidth: 700 }}>
       <Typography variant="h5" component="h1">Administración de usuarios</Typography>
+      <Button component={RouterLink} to="/administracion/estadisticas" sx={{ alignSelf: 'flex-start' }}>Estadísticas generales</Button>
       <Typography color="text.secondary">
         Solo el propietario puede otorgar o retirar el rol de administrador.
       </Typography>
@@ -86,6 +88,8 @@ export default function AdminUsersView() {
               {item.email ?? 'Sin correo'} · {item.role === 'ADMIN' ? 'Administrador' : 'Usuario'} · {statusLabel[item.status]}
             </Typography>
           </div>
+          <Stack direction="row" spacing={1}>
+          <Button component={RouterLink} to={`/administracion/usuarios/${item.id}/estadisticas`}>Ver estadísticas</Button>
           {user?.isOwner && !item.isOwner && (
             <Button
               onClick={() => setSelected(item)}
@@ -94,6 +98,7 @@ export default function AdminUsersView() {
               {item.role === 'ADMIN' ? 'Retirar administrador' : 'Hacer administrador'}
             </Button>
           )}
+          </Stack>
         </Stack>
       ))}
       {data && (
