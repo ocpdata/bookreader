@@ -43,6 +43,15 @@ export function TermsView() {
       <Section title="Límites de uso">
         {'Cada cuenta tiene un espacio de almacenamiento limitado y un tamaño máximo por archivo (200 MB, MP3 o M4A). Podemos limitar o suspender cuentas que abusen del servicio, intenten vulnerarlo o lo usen para distribuir contenido a terceros.'}
       </Section>
+      <Section title="Prueba gratuita y planes">
+        {'Al verificar tu correo comienza una prueba gratuita de 30 días con 2 GB y 25 audios. La prueba es una por persona (por dirección de correo): borrar la cuenta y crearla de nuevo no la reinicia.\n\nEl plan Premium cuesta MX$69 al mes o MX$690 al año (equivale a 10 meses) e incluye 10 GB y 500 audios. Los precios están en pesos mexicanos e incluyen los impuestos aplicables; si pagas desde otro país, tu banco convierte el cargo a tu moneda y puede aplicar su propia comisión.'}
+      </Section>
+      <Section title="Pagos, renovación y cancelación">
+        {'Los pagos los procesa Stripe; nosotros no vemos ni guardamos los datos de tu tarjeta. La suscripción se renueva automáticamente (cada mes o cada año, según tu plan) hasta que la canceles.\n\nPuedes cancelar en cualquier momento desde tu cuenta («Gestionar suscripción»): se detiene la renovación y conservas el acceso hasta el final del período ya pagado. El pago mensual no es reembolsable. El pago anual es reembolsable por completo si lo pides dentro de los 7 días siguientes al cobro, escribiendo a ' + CONTACT + '.\n\nPodemos cambiar los precios; cualquier cambio se avisará con al menos 30 días y aplicará a partir de tu siguiente renovación.'}
+      </Section>
+      <Section title="Si tu plan o tu prueba terminan">
+        {'No borramos tu contenido. Podrás seguir entrando, escuchando, descargando y eliminando tus audios, pero no subir nuevos hasta que te suscribas o renueves.'}
+      </Section>
       <Section title="Disponibilidad y responsabilidad">
         {'Hacemos copias de seguridad y cuidamos tus datos, pero el servicio se ofrece tal cual, sin garantía de disponibilidad continua. Conserva copia de tus archivos originales.'}
       </Section>
@@ -66,13 +75,13 @@ export function PrivacyView() {
         {'El responsable del tratamiento de tus datos es el operador de BookBrief. Contacto: ' + CONTACT + '.'}
       </Section>
       <Section title="Qué datos guardamos">
-        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores, progreso e historial de tiempo de escucha.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
+        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores, progreso e historial de tiempo de escucha.\n• Plan y pagos: tu plan, su vencimiento y un identificador de cliente de Stripe; nunca los datos de tu tarjeta, que solo ve Stripe.\n• Para que la prueba gratuita sea una por persona conservamos una huella irreversible (hash) del correo que ya la usó, incluso si borras la cuenta; no permite reconstruir tu dirección.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
       </Section>
       <Section title="Para qué los usamos">
         {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), mostrar estadísticas personales y administrativas de uso, enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. Los administradores pueden consultar tus estadísticas y los títulos escuchados. No vendemos tus datos ni los usamos para publicidad.'}
       </Section>
       <Section title="Con quién se comparten">
-        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
+        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Los pagos los procesa Stripe: recibe tu correo y los datos de pago que tú le des en su página; nosotros solo recibimos la confirmación y un identificador de cliente. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
       </Section>
       <Section title="Cookies">
         {'Solo usamos una cookie de sesión necesaria para mantenerte conectado. No usamos cookies de seguimiento ni publicidad.'}
@@ -81,7 +90,7 @@ export function PrivacyView() {
         {'Puedes acceder, rectificar, cancelar u oponerte al tratamiento de tus datos. Puedes eliminar tu cuenta y todo tu contenido desde tu cuenta, o pedirlo a ' + CONTACT + '.'}
       </Section>
       <Section title="Conservación">
-        {'Conservamos tus datos y tu historial de escucha mientras tengas la cuenta. Al eliminar definitivamente un audio se elimina también su historial. Lo que borras pasa a la papelera 30 días y después se elimina definitivamente (las copias de seguridad técnicas pueden tardar hasta 14 días más en desaparecer).'}
+        {'Conservamos tus datos y tu historial de escucha mientras tengas la cuenta. Al eliminar definitivamente un audio se elimina también su historial. Lo que borras pasa a la papelera 30 días y después se elimina definitivamente (las copias de seguridad técnicas pueden tardar hasta 14 días más en desaparecer). Al eliminar la cuenta solo se conservan la huella del correo que ya usó su prueba gratuita y los registros de facturación que Stripe debe guardar por obligación legal.'}
       </Section>
     </Container>
   )
