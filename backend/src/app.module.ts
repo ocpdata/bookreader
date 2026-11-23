@@ -12,6 +12,7 @@ import { TagsModule } from './tags/tags.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SummariesModule } from './summaries/summaries.module';
 import { HealthController } from './health/health.controller';
+import { BillingModule } from './billing/billing.module';
 import { StatisticsModule } from './statistics/statistics.module';
 
 @Module({
@@ -28,6 +29,7 @@ import { StatisticsModule } from './statistics/statistics.module';
     CategoriesModule,
     SummariesModule,
     StatisticsModule,
+    BillingModule,
     ...(process.env.ABS_COMPAT_ENABLED === 'false' ? [] : [AbsCompatModule]),
   ],
   controllers: [HealthController],

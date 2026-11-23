@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -12,7 +12,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, deleteAccount, getUsage, listDevices, revokeAllDevices, revokeDevice, type LinkedDevice, type Usage } from '../api'
+import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
 import { formatBytes } from '../format'
 
@@ -100,10 +100,31 @@ function DeleteAccountSection() {
 
 const PLAN_LABEL = { TRIAL: 'Prueba gratuita', PREMIUM: 'Premium', FOUNDER: 'Cuenta fundadora' }
 
-/** Plan comercial de la cuenta: tipo, vencimiento y si ya no se puede subir. */
+/** Plan comercial de la cuenta: tipo, vencimiento, suscripción y gestión de pagos. */
 function PlanSection({ usage }: { usage: Usage }) {
+  const [billingEnabled, setBillingEnabled] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const expires = usage.planExpiresAt ? new Date(usage.planExpiresAt) : null
   const daysLeft = expires ? Math.max(0, Math.ceil((expires.getTime() - Date.now()) / 86400000)) : null
+
+  useEffect(() => {
+    getBillingConfig()
+      .then((config) => setBillingEnabled(config.enabled))
+      .catch(() => undefined)
+  }, [])
+
+  async function go(action: () => Promise<{ url: string }>) {
+    setBusy(true)
+    setError('')
+    try {
+      window.location.assign((await action()).url)
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+
   return (
     <Stack spacing={1}>
       <Typography variant="h6" component="h2">
@@ -118,10 +139,42 @@ function PlanSection({ usage }: { usage: Usage }) {
       {usage.uploadsBlocked && (
         <Alert severity="warning">
           {usage.plan === 'TRIAL'
-            ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios, pero no subir nuevos. Pronto podrás suscribirte.'
-            : 'Tu plan venció. Puedes seguir escuchando y descargando tus audios, pero no subir nuevos.'}
+            ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios; suscríbete para volver a subir.'
+            : 'Tu plan venció. Puedes seguir escuchando y descargando tus audios; renueva para volver a subir.'}
         </Alert>
       )}
+      {billingEnabled && usage.plan !== 'FOUNDER' && (
+        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+          {usage.plan === 'TRIAL' && (
+            <>
+              <Button variant="contained" disabled={busy} onClick={() => void go(() => startCheckout('monthly'))}>
+                Suscribirme · MX$69/mes
+              </Button>
+              <Button variant="outlined" disabled={busy} onClick={() => void go(() => startCheckout('yearly'))}>
+                Plan anual · MX$690 (2 meses gratis)
+              </Button>
+            </>
+          )}
+          {usage.plan === 'PREMIUM' && (
+            <>
+              {usage.uploadsBlocked && (
+                <Button variant="contained" disabled={busy} onClick={() => void go(() => startCheckout('monthly'))}>
+                  Renovar suscripción
+                </Button>
+              )}
+              <Button variant="outlined" disabled={busy} onClick={() => void go(openBillingPortal)}>
+                Gestionar suscripción y facturas
+              </Button>
+            </>
+          )}
+        </Stack>
+      )}
+      {billingEnabled && usage.plan === 'TRIAL' && (
+        <Typography variant="caption" color="text.secondary">
+          El pago lo procesa Stripe en pesos mexicanos (MX$69 ≈ US$4); desde otros países el banco convierte el cargo.
+        </Typography>
+      )}
+      {error && <Alert severity="error">{error}</Alert>}
     </Stack>
   )
 }
@@ -129,18 +182,33 @@ function PlanSection({ usage }: { usage: Usage }) {
 /** Espacio y audios usados frente a la cuota de la cuenta. */
 function UsageSection() {
   const [usage, setUsage] = useState<Usage | null>(null)
+  const [params, setParams] = useSearchParams()
+  const [paid, setPaid] = useState(false)
 
   useEffect(() => {
-    getUsage()
-      .then(setUsage)
+    const sessionId = params.get('session_id')
+    const returning = params.get('pago') === 'exitoso' && sessionId
+    const load = () => getUsage().then(setUsage).catch(() => undefined)
+    if (!returning) {
+      void load()
+      return
+    }
+    // Al volver de Stripe se confirma el pago con el servidor (por si el webhook aún no llegó).
+    confirmCheckout(sessionId)
+      .then(() => setPaid(true))
       .catch(() => undefined)
-  }, [])
+      .finally(() => {
+        setParams({}, { replace: true })
+        void load()
+      })
+  }, [params, setParams])
 
   if (!usage) return null
   const percent = Math.min(100, (usage.usedBytes / usage.limitBytes) * 100)
   const nearlyFull = percent >= 90 || usage.audios >= usage.maxAudios
   return (
     <Stack spacing={3}>
+      {paid && <Alert severity="success">¡Gracias! Tu suscripción está activa.</Alert>}
       <PlanSection usage={usage} />
       <Stack spacing={1}>
       <Typography variant="h6" component="h2">

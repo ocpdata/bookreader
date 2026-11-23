@@ -177,6 +177,19 @@ export interface Usage {
 
 export const getUsage = () => request<Usage>('/usage')
 
+export const getBillingConfig = () => request<{ enabled: boolean }>('/billing/config')
+
+/** Crea la sesión de pago de Stripe y devuelve su URL para redirigir. */
+export const startCheckout = (plan: 'monthly' | 'yearly') =>
+  request<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) })
+
+/** Portal de Stripe para gestionar o cancelar la suscripción. */
+export const openBillingPortal = () => request<{ url: string }>('/billing/portal', { method: 'POST' })
+
+/** Confirma el pago al volver de Stripe (por si el webhook aún no llegó). */
+export const confirmCheckout = (sessionId: string) =>
+  request<{ plan: 'PREMIUM' | null }>('/billing/confirm', { method: 'POST', body: JSON.stringify({ sessionId }) })
+
 export interface LinkedDevice {
   id: string
   name: string
