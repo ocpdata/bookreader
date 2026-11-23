@@ -1,10 +1,9 @@
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
 import Typography from '@mui/material/Typography'
 
 // Cambiar el correo de contacto aquí; es el canal para ejercer derechos sobre los datos y para reclamaciones.
-const CONTACT = 'ocarrillo@accessq.com.mx'
+const CONTACT = 'soporte@digitalvs.com'
 
 function Section({ title, children }: { title: string; children: string }) {
   return (
@@ -17,17 +16,12 @@ function Section({ title, children }: { title: string; children: string }) {
   )
 }
 
-const DRAFT = 'Borrador pendiente de revisión legal. El texto definitivo puede cambiar; si cambia de forma relevante se te pedirá aceptarlo de nuevo.'
-
 export function TermsView() {
   return (
     <Container maxWidth="sm" sx={{ py: 2 }}>
       <Typography variant="h4" component="h1" gutterBottom>
         Términos de uso
       </Typography>
-      <Alert severity="warning" sx={{ mb: 3 }}>
-        {DRAFT}
-      </Alert>
       <Section title="Qué es BookBrief">
         {'BookBrief es un servicio para guardar tus propios audios de resúmenes de libros y escucharlos desde la web o desde aplicaciones compatibles con Audiobookshelf. Tu biblioteca es privada: solo tú la ves.'}
       </Section>
@@ -52,8 +46,11 @@ export function TermsView() {
       <Section title="Si tu plan o tu prueba terminan">
         {'No borramos tu contenido. Podrás seguir entrando, escuchando, descargando y eliminando tus audios, pero no subir nuevos hasta que te suscribas o renueves.'}
       </Section>
-      <Section title="Disponibilidad y responsabilidad">
-        {'Hacemos copias de seguridad y cuidamos tus datos, pero el servicio se ofrece tal cual, sin garantía de disponibilidad continua. Conserva copia de tus archivos originales.'}
+      <Section title="Disponibilidad">
+        {'Hacemos copias de seguridad y cuidamos tus datos, pero el servicio se ofrece «tal cual» y «según disponibilidad», sin garantía de funcionamiento continuo ni libre de errores. Podemos interrumpirlo temporalmente por mantenimiento o por causas ajenas a nosotros. Conserva siempre copia de tus archivos originales.'}
+      </Section>
+      <Section title="Limitación de responsabilidad">
+        {'En la medida en que la ley lo permita, no somos responsables de la pérdida o alteración de archivos o datos, de las interrupciones del servicio, del contenido que subas tú u otras personas, ni de daños indirectos o consecuentes (como la pérdida de ingresos o de oportunidades).\n\nNuestra responsabilidad total frente a ti por cualquier reclamación relacionada con el servicio se limita al importe que hayas pagado por él en los 12 meses anteriores al hecho que la originó. Si solo usas la prueba gratuita, no hay importe que reclamar.\n\nNada de lo anterior limita la responsabilidad que la ley no permita limitar ni los derechos que tengas como consumidor.'}
       </Section>
       <Section title="Cambios">
         {'Podemos actualizar estos términos. Los cambios relevantes se avisarán y se te pedirá aceptarlos de nuevo.'}
@@ -68,9 +65,6 @@ export function PrivacyView() {
       <Typography variant="h4" component="h1" gutterBottom>
         Aviso de privacidad
       </Typography>
-      <Alert severity="warning" sx={{ mb: 3 }}>
-        {DRAFT}
-      </Alert>
       <Section title="Responsable">
         {'El responsable del tratamiento de tus datos es el operador de BookBrief. Contacto: ' + CONTACT + '.'}
       </Section>
@@ -88,6 +82,9 @@ export function PrivacyView() {
       </Section>
       <Section title="Tus derechos">
         {'Puedes acceder, rectificar, cancelar u oponerte al tratamiento de tus datos. Puedes eliminar tu cuenta y todo tu contenido desde tu cuenta, o pedirlo a ' + CONTACT + '.'}
+      </Section>
+      <Section title="Seguridad de tus datos">
+        {'Protegemos tu información con medidas razonables: la contraseña se guarda cifrada de forma irreversible, tus archivos están en un almacenamiento privado y se reproducen con enlaces temporales, y la conexión al servicio va cifrada.\n\nAun así, ningún sistema es completamente seguro y no podemos garantizar que nunca ocurra un acceso no autorizado o una pérdida de datos. En la medida en que la ley lo permita, nuestra responsabilidad se rige por la limitación de los Términos de uso. Si ocurre una vulneración que afecte de forma significativa tus derechos, te lo informaremos por correo para que puedas tomar medidas.\n\nTú también cuidas tu cuenta: usa una contraseña propia y no la compartas.'}
       </Section>
       <Section title="Conservación">
         {'Conservamos tus datos y tu historial de escucha mientras tengas la cuenta. Al eliminar definitivamente un audio se elimina también su historial. Lo que borras pasa a la papelera 30 días y después se elimina definitivamente (las copias de seguridad técnicas pueden tardar hasta 14 días más en desaparecer). Al eliminar la cuenta solo se conservan la huella del correo que ya usó su prueba gratuita y los registros de facturación que Stripe debe guardar por obligación legal.'}

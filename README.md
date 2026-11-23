@@ -180,7 +180,7 @@ npm run user -- audios correo@dominio.com                # y: remove-audio <id> 
 
 En la VM: `ssh -t … "cd /var/app/bookreader/current/backend && node --env-file=/var/app/bookreader/shared/api.env scripts/user-admin.js set-owner correo@dominio.com 'Nombre'"`.
 
-`UserResolver` (`backend/src/auth/`) es el único punto que decide quién es el usuario de la petición; `users.external_id` está reservado para el `sub` de Amazon Cognito, al que se podrá migrar después (con una Lambda de migración de usuarios): se conserva el hash bcrypt y `email_verified_at` expresa lo mismo que `email_verified` de Cognito. Pendiente: quitar el valor por defecto de `summaries.user_id`. Los términos y el aviso de privacidad (`/terminos`, `/privacidad`) son un **borrador** pendiente de revisión legal.
+`UserResolver` (`backend/src/auth/`) es el único punto que decide quién es el usuario de la petición; `users.external_id` está reservado para el `sub` de Amazon Cognito, al que se podrá migrar después (con una Lambda de migración de usuarios): se conserva el hash bcrypt y `email_verified_at` expresa lo mismo que `email_verified` de Cognito. Pendiente: quitar el valor por defecto de `summaries.user_id`. Los términos y el aviso de privacidad (`/terminos`, `/privacidad`) no han pasado por revisión legal.
 
 ## Pruebas
 

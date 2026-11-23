@@ -17,6 +17,7 @@ import BatchUploadView from './components/BatchUploadView'
 import ForgotPasswordView from './components/ForgotPasswordView'
 import HomeView from './components/HomeView'
 import { PrivacyView, TermsView } from './components/LegalViews'
+import LandingView from './components/LandingView'
 import LibraryView from './components/LibraryView'
 import LoginView from './components/LoginView'
 import RegisterView from './components/RegisterView'
@@ -50,9 +51,24 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** `/` es el inicio con sesión y la portada pública sin ella. */
+function HomeOrLanding() {
+  const { user } = useAuth()
+  if (user === undefined) {
+    return (
+      <Box sx={{ textAlign: 'center', pt: 4 }}>
+        <CircularProgress size={28} />
+      </Box>
+    )
+  }
+  return user ? <HomeView /> : <LandingView />
+}
+
 export default function App() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isLanding = user === null && location.pathname === '/'
   const [categoryState, setCategoryState] = useState<{ user: CurrentUser; items: SelectableCategory[] } | null>(null)
   const [error, setError] = useState('')
   const categories = user && categoryState?.user === user ? categoryState.items : []
@@ -96,11 +112,15 @@ export default function App() {
         <Toolbar sx={{ maxWidth: 1320, width: '100%', mx: 'auto', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap', py: { xs: 1, md: 1.5 } }}>
           <Stack component={RouterLink} to="/" direction="row" spacing={1.2}
             sx={{ alignItems: 'center', color: 'text.primary', textDecoration: 'none', flexShrink: 0 }}>
-            <Box aria-hidden="true" sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: 'primary.main', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 13 }}>
-              BB
-            </Box>
+            <Box component="img" src="/logo.svg" alt="" aria-hidden="true" sx={{ width: 36, height: 36, display: 'block' }} />
             <Typography variant="h6">BookBrief</Typography>
           </Stack>
+          {user === null && (
+            <>
+              <Box sx={{ flexGrow: 1 }} />
+              <Button component={RouterLink} to="/entrar" variant="outlined">Entrar</Button>
+            </>
+          )}
           {user && (
             <>
               <Box sx={{ flexGrow: 1 }} />
@@ -122,7 +142,7 @@ export default function App() {
           )}
         </Toolbar>
       </AppBar>
-      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      <Container maxWidth={isLanding ? false : 'lg'} disableGutters={isLanding} sx={{ py: isLanding ? 0 : { xs: 3, md: 5 } }}>
         <TermsGate />
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -137,7 +157,7 @@ export default function App() {
           <Route path="/restablecer" element={<ResetPasswordView />} />
           <Route path="/terminos" element={<TermsView />} />
           <Route path="/privacidad" element={<PrivacyView />} />
-          <Route path="/" element={<RequireAuth><HomeView /></RequireAuth>} />
+          <Route path="/" element={<HomeOrLanding />} />
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
