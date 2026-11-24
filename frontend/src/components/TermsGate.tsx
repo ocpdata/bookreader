@@ -40,7 +40,7 @@ export default function TermsGate() {
 
   async function leave() {
     await logout()
-    navigate('/entrar', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return (

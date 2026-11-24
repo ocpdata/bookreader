@@ -103,7 +103,7 @@ export default function App() {
 
   async function handleLogout() {
     await logout()
-    navigate('/entrar', { replace: true })
+    navigate('/', { replace: true })
   }
 
   return (
