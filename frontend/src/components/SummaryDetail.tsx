@@ -104,7 +104,7 @@ export default function SummaryDetail() {
   }
 
   async function moveToTrash() {
-    if (!summary) return
+    if (!summary || summary.isOwner === false) return
     setDeleting(true)
     // El reproductor se desmonta al salir y guarda su posición: se ignora para no recrear progreso.
     suppressSave.current = true
@@ -156,7 +156,12 @@ export default function SummaryDetail() {
               </Typography>
               {summary.summaryTitle && <Typography variant="subtitle1">{summary.summaryTitle}</Typography>}
               <Typography color="text.secondary">{meta}</Typography>
-              <CategoryChip name={summary.category.name} />
+              {summary.isOwner === false && (
+                <Typography variant="body2" color="text.secondary">
+                  Propietario: {summary.ownerName || 'No informado'} · Solo lectura
+                </Typography>
+              )}
+              {summary.isOwner !== false && <CategoryChip name={summary.category.name} />}
               {summary.narrator && (
                 <Typography variant="body2" color="text.secondary">
                   Narra: {summary.narrator}
@@ -214,13 +219,18 @@ export default function SummaryDetail() {
             <Button onClick={restart} disabled={!progress}>
               Reiniciar
             </Button>
-            <Button onClick={() => navigate(`/audios/${summary.id}/editar`)}>Editar</Button>
-            <Button color="error" onClick={() => setConfirmingDelete(true)} sx={{ ml: 'auto' }}>
-              Eliminar
-            </Button>
+            {summary.isOwner !== false && (
+              <>
+                <Button onClick={() => navigate(`/invitaciones?audio=${encodeURIComponent(summary.id)}`)}>Compartir</Button>
+                <Button onClick={() => navigate(`/audios/${summary.id}/editar`)}>Editar</Button>
+                <Button color="error" onClick={() => setConfirmingDelete(true)} sx={{ ml: 'auto' }}>
+                  Eliminar
+                </Button>
+              </>
+            )}
           </Stack>
           <ConfirmDialog
-            open={confirmingDelete}
+            open={confirmingDelete && summary.isOwner !== false}
             title="¿Mover a la papelera?"
             message={`«${summary.title}» se moverá a la papelera. Podrás restaurarlo durante 30 días.`}
             confirmLabel="Mover a la papelera"

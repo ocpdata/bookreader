@@ -24,6 +24,8 @@ import RegisterView from './components/RegisterView'
 import ResetPasswordView from './components/ResetPasswordView'
 import SummaryDetail from './components/SummaryDetail'
 import SummaryForm from './components/SummaryForm'
+import SharesView from './components/SharesView'
+import SharedItemsView from './components/SharedItemsView'
 import StatisticsView from './components/StatisticsView'
 import TermsGate from './components/TermsGate'
 import TrashView from './components/TrashView'
@@ -129,6 +131,8 @@ export default function App() {
                 sx={{ order: { xs: 3, md: 0 }, flexBasis: { xs: '100%', md: 'auto' }, overflowX: 'auto' }}>
                 <Button component={NavLink} to="/" end sx={navSx}>Inicio</Button>
                 <Button component={NavLink} to="/biblioteca" sx={navSx}>Biblioteca</Button>
+                <Button component={NavLink} to="/compartidos" sx={navSx}>Compartidos</Button>
+                <Button component={NavLink} to="/invitaciones" sx={navSx}>Invitaciones</Button>
                 <Button component={NavLink} to="/estadisticas" sx={navSx}>Estadísticas</Button>
                 <Button component={NavLink} to="/papelera" sx={navSx}>Papelera</Button>
                 {user.role === 'ADMIN' && <Button component={NavLink} to="/administracion" sx={navSx}>Administración</Button>}
@@ -161,6 +165,8 @@ export default function App() {
           <Route path="/" element={<HomeOrLanding />} />
           <Route path="/biblioteca" element={<RequireAuth><LibraryView categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/papelera" element={<RequireAuth><TrashView /></RequireAuth>} />
+          <Route path="/compartidos" element={<RequireAuth><SharedItemsView /></RequireAuth>} />
+          <Route path="/invitaciones" element={<RequireAuth><SharesView /></RequireAuth>} />
           <Route path="/cuenta" element={<RequireAuth><AccountView /></RequireAuth>} />
           <Route path="/estadisticas" element={<RequireAuth><StatisticsView /></RequireAuth>} />
           <Route path="/administracion" element={<RequireAuth><AdminUsersView /></RequireAuth>} />

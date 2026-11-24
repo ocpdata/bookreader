@@ -16,6 +16,20 @@ function layout(heading: string, paragraphs: string[], action?: { label: string;
 
 const text = (lines: (string | undefined)[]) => lines.filter((l) => l !== undefined).join('\n');
 
+export function shareInvitationMessage(ownerName: string, scope: 'LIBRARY' | 'ITEMS', url: string) {
+  const description = scope === 'LIBRARY' ? 'su biblioteca de audios, incluidos los que añada después' : 'una selección fija de sus audios';
+  const paragraphs = [
+    `${ownerName} quiere compartir contigo ${description} en BookBrief.`,
+    'Para ver la invitación, inicia sesión con este correo verificado. Si aún no tienes cuenta, créala y verifica este correo primero.',
+    'Tienes 7 días para aceptar o rechazar. No tendrás acceso a los audios hasta aceptar; el propietario puede revocar el acceso.',
+  ];
+  return {
+    subject: 'Invitación para compartir audios en BookBrief',
+    text: text([...paragraphs, '', url, '', 'Si no esperabas esta invitación, puedes ignorarla.']),
+    html: layout('Te invitaron a escuchar', paragraphs, { label: 'Ver invitaciones', url }, 'Si no esperabas esta invitación, puedes ignorarla.'),
+  };
+}
+
 export function verifyEmailMessage(name: string, url: string) {
   return {
     subject: 'Verifica tu correo en BookBrief',

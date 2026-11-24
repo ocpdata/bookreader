@@ -121,6 +121,7 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (editing && (!original || original.isOwner === false)) return
     setError('')
     if (!editing) {
       if (!file) return setError('Selecciona un archivo MP3 o M4A')
@@ -160,6 +161,14 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
 
   if (loading) return <CircularProgress size={28} />
   if (editing && !original) return <Alert severity="error">{error || 'Resumen no encontrado'}</Alert>
+  if (original?.isOwner === false) {
+    return (
+      <Stack spacing={2}>
+        <Alert severity="info">Este audio es compartido. Solo su propietario puede editarlo.</Alert>
+        <Button onClick={() => navigate(`/audios/${original.id}`)}>Volver al audio</Button>
+      </Stack>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit}>

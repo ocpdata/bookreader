@@ -82,9 +82,9 @@ export default function SummaryCard({
           </Stack>
           {!compact && s.summaryTitle && <Typography variant="subtitle2">{s.summaryTitle}</Typography>}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, overflowWrap: 'anywhere' }}>{meta}</Typography>
-          <Box sx={{ mt: 0.75 }}>
+          {s.isOwner !== false && <Box sx={{ mt: 0.75 }}>
             <CategoryChip name={s.category.name} />
-          </Box>
+          </Box>}
           {s.description?.trim() && <ExpandableDescription description={s.description} title={s.title} />}
           {!compact && folderPath && (
             <Chip
@@ -127,13 +127,14 @@ export default function SummaryCard({
         <Button variant={featured ? 'contained' : 'text'} onClick={() => navigate(`/audios/${s.id}`)}>
           {inProgress ? 'Continuar' : 'Escuchar'}
         </Button>
-        {!compact && (
+        {!compact && s.isOwner !== false && (
           <>
             <IconButton aria-label={`Opciones de ${s.title}`} aria-haspopup="menu" aria-expanded={Boolean(menuAnchor)}
               onClick={(event) => setMenuAnchor(event.currentTarget)}>
               ⋯
             </IconButton>
             <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+              <MenuItem onClick={() => { setMenuAnchor(null); navigate(`/invitaciones?audio=${encodeURIComponent(s.id)}`) }}>Compartir</MenuItem>
               <MenuItem onClick={() => { setMenuAnchor(null); navigate(`/audios/${s.id}/editar`) }}>Editar</MenuItem>
               {onMove && <MenuItem onClick={() => { setMenuAnchor(null); onMove(s) }}>Mover</MenuItem>}
               {onDelete && <Divider />}

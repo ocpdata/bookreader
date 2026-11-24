@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuotaService } from '../quota/quota.service';
-import { StorageService } from '../storage/storage.service';
+import { AudioStorageError, InvalidAudioError, StorageService } from '../storage/storage.service';
 import { coverVersion, newCoverKey, normalizeCover } from '../covers/cover-image';
 import { FoldersService } from '../folders/folders.service';
 import { AudioInfo } from '../storage/storage.service';
@@ -13,6 +13,7 @@ import { PurgeService } from './purge.service';
 import { CategoriesService } from '../categories/categories.service';
 import { hashAudio } from './audio-hash';
 import { DriveService } from './drive.service';
+import { SharingService } from '../sharing/sharing.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
 import {
   AUDIO_TYPES,
@@ -56,6 +57,10 @@ interface RelationRows {
   favorites: unknown[];
 }
 
+// Cambia la URL anterior para no reutilizar portadas cacheadas antes de comprobar permisos compartidos.
+const coverUrlOf = (id: string, key: string | null) =>
+  key ? `/api/summaries/${id}/cover?v=${coverVersion(key)}&access=1` : null;
+
 /** Aplana las relaciones: progreso como objeto o null, etiquetas como nombres y favorito como booleano. */
 function present<T extends RelationRows>(summary: T) {
   const { progress, tags, favorites, coverKey, ...rest } = summary;
@@ -63,10 +68,44 @@ function present<T extends RelationRows>(summary: T) {
   return {
     ...rest,
     // La clave de S3 es interna; el cliente solo ve la URL (con versión para invalidar la caché).
-    coverUrl: coverKey ? `/api/summaries/${summary.id}/cover?v=${coverVersion(coverKey)}` : null,
+    coverUrl: coverUrlOf(summary.id, coverKey),
     progress: row ? { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt } : null,
     tags: tags.map((t) => t.tag.name).sort((a, b) => a.localeCompare(b, 'es')),
     favorite: favorites.length > 0,
+  };
+}
+
+const sharedInclude = (userId: string) => ({
+  user: { select: { name: true } },
+  progress: { where: { userId } },
+  favorites: { where: { userId } },
+}) satisfies Prisma.SummaryInclude;
+
+type SharedRow = Prisma.SummaryGetPayload<{ include: ReturnType<typeof sharedInclude> }>;
+
+function presentShared(row: SharedRow) {
+  const progress = row.progress[0];
+  return {
+    id: row.id,
+    title: row.title,
+    author: row.author,
+    summaryTitle: row.summaryTitle,
+    narrator: row.narrator,
+    description: row.description,
+    durationSeconds: row.durationSeconds,
+    progress: progress ? { positionSeconds: progress.positionSeconds, completed: progress.completed, updatedAt: progress.updatedAt } : null,
+    tags: [],
+    favorite: row.favorites.length > 0,
+    categoryId: '',
+    category: { id: '', name: 'Compartido' },
+    folderId: null,
+    coverUrl: coverUrlOf(row.id, row.coverKey),
+    originalFilename: '',
+    sizeBytes: row.sizeBytes,
+    status: row.status,
+    createdAt: row.createdAt,
+    isOwner: false,
+    ownerName: row.user.name,
   };
 }
 
@@ -86,6 +125,7 @@ export class SummariesService {
     private readonly purge: PurgeService,
     private readonly categories: CategoriesService,
     private readonly drive: DriveService,
+    private readonly sharing: SharingService,
   ) {}
 
   async list(
@@ -182,6 +222,31 @@ export class SummariesService {
   /** Un audio ajeno se trata igual que uno inexistente (404) para no revelar que existe. */
   async get(id: string, userId: string) {
     return this.fillMissingDuration(await this.load(id, userId));
+  }
+
+  async getReadable(id: string, userId: string) {
+    const owned = await this.prisma.summary.findFirst({ where: { id, userId, deletedAt: null }, select: { id: true } });
+    if (owned) return { ...await this.get(id, userId), isOwner: true };
+    const row = await this.prisma.summary.findFirst({
+      where: { id, status: SummaryStatus.READY, deletedAt: null, AND: [await this.sharing.readableWhere(userId)] },
+      include: sharedInclude(userId),
+    });
+    if (!row) throw new NotFoundException('Resumen no encontrado');
+    return presentShared(await this.fillMissingDuration(row));
+  }
+
+  async listShared(userId: string) {
+    const rows = await this.prisma.summary.findMany({
+      where: {
+        userId: { not: userId },
+        status: SummaryStatus.READY,
+        deletedAt: null,
+        AND: [await this.sharing.readableWhere(userId)],
+      },
+      include: sharedInclude(userId),
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map(presentShared);
   }
 
   private async load(id: string, userId: string) {
@@ -376,15 +441,24 @@ export class SummariesService {
     if (summary.cancelRequestedAt) throw new ConflictException('Esta carga fue cancelada');
     if (summary.purgeClaimedAt) throw new ConflictException('Esta carga está siendo eliminada');
 
-    const size = await this.storage.getObjectSize(summary.s3Key);
+    let size: number | null;
+    try {
+      size = await this.storage.getObjectSize(summary.s3Key);
+    } catch (error) {
+      this.logger.error(`No se pudo consultar el audio ${summary.id}: ${error}`);
+      throw new BadGatewayException('No se pudo leer el archivo; inténtalo de nuevo');
+    }
     if (size === null) throw new BadRequestException('El archivo aún no existe en S3');
     if (size !== summary.sizeBytes) throw new BadRequestException('El tamaño del archivo subido no coincide');
 
     let info: AudioInfo;
     try {
       info = await this.storage.getAudioInfo(summary.s3Key, summary.contentType, size);
-    } catch {
-      throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
+    } catch (error) {
+      if (error instanceof InvalidAudioError) throw new BadRequestException('El archivo no es un audio MP3 o M4A válido');
+      const detail = error instanceof AudioStorageError && error.originalError ? error.originalError : error;
+      this.logger.error(`No se pudo leer el audio ${summary.id}: ${detail}`);
+      throw new BadGatewayException('No se pudo leer el archivo; inténtalo de nuevo');
     }
 
     let audioSha256: string;
@@ -507,10 +581,12 @@ export class SummariesService {
 
   async openCover(id: string, userId: string) {
     const row = await this.prisma.summary.findFirst({
-      where: { id, userId, deletedAt: null },
-      select: { coverKey: true },
+      where: { id, deletedAt: null, AND: [await this.sharing.readableWhere(userId)] },
+      select: { coverKey: true, userId: true, status: true },
     });
-    if (!row?.coverKey) throw new NotFoundException('El resumen no tiene portada');
+    if (!row?.coverKey || (row.userId !== userId && row.status !== SummaryStatus.READY)) {
+      throw new NotFoundException('El resumen no tiene portada');
+    }
     try {
       return await this.storage.getObjectStream(row.coverKey);
     } catch {
@@ -519,7 +595,7 @@ export class SummariesService {
   }
 
   async setFavorite(id: string, userId: string, favorite: boolean) {
-    await this.get(id, userId);
+    await this.getReadable(id, userId);
     if (favorite) {
       await this.prisma.favorite.upsert({
         where: { userId_summaryId: { userId, summaryId: id } },
@@ -533,7 +609,7 @@ export class SummariesService {
   }
 
   async saveProgress(id: string, userId: string, dto: SaveProgressDto) {
-    const summary = await this.get(id, userId);
+    const summary = await this.getReadable(id, userId);
     if (summary.status !== SummaryStatus.READY) {
       throw new BadRequestException('El audio aún no está disponible');
     }
@@ -564,7 +640,7 @@ export class SummariesService {
   }
 
   async resetProgress(id: string, userId: string) {
-    await this.get(id, userId);
+    await this.getReadable(id, userId);
     await this.prisma.playbackProgress.deleteMany({ where: { userId, summaryId: id } });
   }
 
@@ -634,11 +710,24 @@ export class SummariesService {
   }
 
   async playback(id: string, userId: string) {
-    const summary = await this.get(id, userId);
+    const summary = await this.readableAudio(id, userId);
+    if (summary.userId === userId) {
+      await this.fillMissingDuration(summary);
+      return { url: await this.storage.createPlaybackUrl(summary.s3Key) };
+    }
+    return { url: `/api/summaries/${id}/audio` };
+  }
+
+  async readableAudio(id: string, userId: string) {
+    const summary = await this.prisma.summary.findFirst({
+      where: { id, deletedAt: null, AND: [await this.sharing.readableWhere(userId)] },
+      select: { id: true, userId: true, s3Key: true, contentType: true, sizeBytes: true, status: true, durationSeconds: true },
+    });
+    if (!summary) throw new NotFoundException('Resumen no encontrado');
     if (summary.status !== SummaryStatus.READY) {
       throw new BadRequestException('El audio aún no está disponible');
     }
-    return { url: await this.storage.createPlaybackUrl(summary.s3Key) };
+    return summary;
   }
 
 }

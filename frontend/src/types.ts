@@ -15,6 +15,9 @@ export interface Progress {
 
 export interface Summary {
   id: string
+  isOwner?: boolean
+  /** Necesario para identificar al propietario de audios de bibliotecas compartidas. */
+  ownerName?: string
   title: string
   author: string
   summaryTitle: string | null
@@ -33,6 +36,24 @@ export interface Summary {
   sizeBytes: number
   status: 'PENDING' | 'READY'
   createdAt: string
+}
+
+export interface Share {
+  id: string
+  email: string
+  ownerName: string
+  scope: 'LIBRARY' | 'ITEMS'
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'REVOKED'
+  createdAt: string
+  expiresAt: string
+  summaryIds: string[]
+  summaries: { id: string; title: string; author: string }[]
+}
+
+export interface ShareFields {
+  email: string
+  scope: Share['scope']
+  summaryIds?: string[]
 }
 
 export interface SummaryFields {

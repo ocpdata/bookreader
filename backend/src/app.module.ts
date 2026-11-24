@@ -14,6 +14,7 @@ import { SummariesModule } from './summaries/summaries.module';
 import { HealthController } from './health/health.controller';
 import { BillingModule } from './billing/billing.module';
 import { StatisticsModule } from './statistics/statistics.module';
+import { SharingModule } from './sharing/sharing.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { StatisticsModule } from './statistics/statistics.module';
     SummariesModule,
     StatisticsModule,
     BillingModule,
+    SharingModule,
     ...(process.env.ABS_COMPAT_ENABLED === 'false' ? [] : [AbsCompatModule]),
   ],
   controllers: [HealthController],

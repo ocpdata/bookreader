@@ -38,6 +38,18 @@ enum SummaryStatus {
   READY
 }
 
+enum ShareScope {
+  LIBRARY
+  ITEMS
+}
+
+enum ShareStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REVOKED
+}
+
 // Usuario único hasta que exista el login. El id fijo se crea en la migración.
 model User {
   id                String             @id @default(uuid()) @db.VarChar(36)
@@ -73,6 +85,8 @@ model User {
   listeningEvents   ListeningEvent[]
   bookmarks         Bookmark[]
   emailTokens       EmailToken[]
+  sharesSent        Share[]            @relation("ShareOwner")
+  sharesReceived    Share[]            @relation("ShareRecipient")
   roleChangesMade   AdminRoleChange[]  @relation("RoleChangeActor")
   roleChangesReceived AdminRoleChange[] @relation("RoleChangeTarget")
 
@@ -119,6 +133,7 @@ model Summary {
   playSessions     PlaySession[]
   listeningEvents  ListeningEvent[]
   bookmarks        Bookmark[]
+  shareItems       ShareItem[]
   title            String             @db.VarChar(200)
   author           String             @db.VarChar(200)
   summaryTitle     String?            @map("summary_title") @db.VarChar(200)
@@ -157,6 +172,56 @@ model Summary {
   @@unique([userId, uploadRequestId])
   @@index([userId, audioSha256])
   @@map("summaries")
+}
+
+// La dirección no exige una cuenta previa. recipientId solo se fija tras una decisión autenticada
+// con correo verificado. expiresAt es el plazo de respuesta, no el vencimiento del acceso aceptado.
+model Share {
+  id          String      @id @default(uuid()) @db.VarChar(36)
+  ownerId     String      @map("owner_id") @db.VarChar(36)
+  recipientId String?     @map("recipient_id") @db.VarChar(36)
+  email       String      @db.VarChar(255)
+  scope       ShareScope
+  status      ShareStatus @default(PENDING)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  expiresAt   DateTime    @map("expires_at")
+  deliveredAt DateTime?   @map("delivered_at")
+  // Huella de propietario, dirección, ámbito e ids ordenados; nula al terminar o caducar.
+  activeKey   String?     @unique @map("active_key") @db.Char(64)
+  owner       User        @relation("ShareOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  recipient   User?       @relation("ShareRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  items       ShareItem[]
+  mailAttempts ShareMailAttempt[]
+
+  @@index([ownerId, createdAt])
+  @@index([ownerId, status, expiresAt])
+  @@index([email, status])
+  @@index([recipientId, status])
+  @@map("shares")
+}
+
+// Referencias, nunca copias. LIBRARY no tiene filas aquí: incluye también los audios futuros.
+model ShareItem {
+  shareId   String  @map("share_id") @db.VarChar(36)
+  summaryId String  @map("summary_id") @db.VarChar(36)
+  share     Share   @relation(fields: [shareId], references: [id], onDelete: Cascade)
+  summary   Summary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@id([shareId, summaryId])
+  @@index([summaryId])
+  @@map("share_items")
+}
+
+model ShareMailAttempt {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  shareId   String   @map("share_id") @db.VarChar(36)
+  createdAt DateTime @default(now()) @map("created_at")
+  share     Share    @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([shareId, createdAt])
+  @@index([createdAt])
+  @@map("share_mail_attempts")
 }
 
 // Posición de escucha de cada usuario en cada audio. "completed" es persistente: solo cambia al

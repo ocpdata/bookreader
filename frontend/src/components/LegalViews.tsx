@@ -23,19 +23,22 @@ export function TermsView() {
         Términos de uso
       </Typography>
       <Section title="Qué es BookBrief">
-        {'BookBrief es un servicio para guardar tus propios audios de resúmenes de libros y escucharlos desde la web o desde aplicaciones compatibles con Audiobookshelf. Tu biblioteca es privada: solo tú la ves.'}
+        {'BookBrief es un servicio para guardar tus propios audios de resúmenes de libros y escucharlos desde la web o desde aplicaciones compatibles con Audiobookshelf. Tu biblioteca es privada salvo el contenido que decidas compartir con otros usuarios.'}
       </Section>
       <Section title="Tu cuenta">
         {'Debes dar un correo propio y mantener segura tu contraseña. Eres responsable de lo que ocurra en tu cuenta. Puedes eliminarla en cualquier momento desde tu cuenta, o pidiéndolo a ' + CONTACT + '.'}
       </Section>
       <Section title="Tu contenido">
-        {'Solo debes subir audios que tengas derecho a guardar y reproducir (propios, con licencia o con permiso de su titular). No subas contenido ilegal ni que infrinja derechos de terceros. Tú conservas todos los derechos sobre tu contenido; nos das permiso únicamente para almacenarlo y reproducírtelo a ti.'}
+        {'Solo debes subir audios que tengas derecho a guardar y reproducir, y compartir únicamente los que tengas derecho a compartir (propios, con licencia o con permiso de su titular). No subas contenido ilegal ni que infrinja derechos de terceros. Tú conservas los derechos sobre tu contenido y nos das permiso para almacenarlo y reproducirlo para ti y para las personas que autorices.'}
       </Section>
       <Section title="Retiro de contenido">
         {'Si eres titular de derechos y crees que un contenido los infringe, escribe a ' + CONTACT + ' indicando qué contenido es, que eres el titular o su representante y cómo contactarte. Retiraremos el contenido que infrinja y podremos suspender las cuentas reincidentes.'}
       </Section>
       <Section title="Límites de uso">
-        {'Cada cuenta tiene un espacio de almacenamiento limitado y un tamaño máximo por archivo (200 MB, MP3 o M4A). Podemos limitar o suspender cuentas que abusen del servicio, intenten vulnerarlo o lo usen para distribuir contenido a terceros.'}
+        {'Cada cuenta tiene un espacio de almacenamiento limitado y un tamaño máximo por archivo (200 MB, MP3 o M4A). Podemos limitar o suspender cuentas que abusen del servicio, intenten vulnerarlo o distribuyan contenido sin autorización.'}
+      </Section>
+      <Section title="Contenido compartido">
+        {'Puedes invitar a otras personas a escuchar toda tu biblioteca o audios seleccionados. Necesitan una cuenta verificada y deben aceptar la invitación. Puedes revocar su acceso, pero no podemos retirar copias que hayan guardado ni garantizar que una transferencia ya iniciada se interrumpa inmediatamente. Los audios compartidos están disponibles en la web, no en las aplicaciones compatibles con Audiobookshelf.'}
       </Section>
       <Section title="Prueba gratuita y planes">
         {'Al verificar tu correo comienza una prueba gratuita de 30 días con 2 GB y 25 audios. La prueba es una por persona (por dirección de correo): borrar la cuenta y crearla de nuevo no la reinicia.\n\nEl plan Premium cuesta MX$69 al mes o MX$690 al año (equivale a 10 meses) e incluye 10 GB y 500 audios. Los precios están en pesos mexicanos e incluyen los impuestos aplicables; si pagas desde otro país, tu banco convierte el cargo a tu moneda y puede aplicar su propia comisión.'}
@@ -44,7 +47,7 @@ export function TermsView() {
         {'Los pagos los procesa Stripe; nosotros no vemos ni guardamos los datos de tu tarjeta. La suscripción se renueva automáticamente (cada mes o cada año, según tu plan) hasta que la canceles.\n\nPuedes cancelar en cualquier momento desde tu cuenta («Gestionar suscripción»): se detiene la renovación y conservas el acceso hasta el final del período ya pagado. El pago mensual no es reembolsable. El pago anual es reembolsable por completo si lo pides dentro de los 7 días siguientes al cobro, escribiendo a ' + CONTACT + '.\n\nPodemos cambiar los precios; cualquier cambio se avisará con al menos 30 días y aplicará a partir de tu siguiente renovación.'}
       </Section>
       <Section title="Si tu plan o tu prueba terminan">
-        {'No borramos tu contenido. Podrás seguir entrando, escuchando, descargando y eliminando tus audios, pero no subir nuevos hasta que te suscribas o renueves.'}
+        {'No borramos tu contenido. Podrás seguir entrando, escuchando tus audios y los que otros compartan contigo, y descargando y eliminando tus propios audios, pero no subir nuevos hasta que te suscribas o renueves.'}
       </Section>
       <Section title="Disponibilidad">
         {'Hacemos copias de seguridad y cuidamos tus datos, pero el servicio se ofrece «tal cual» y «según disponibilidad», sin garantía de funcionamiento continuo ni libre de errores. Podemos interrumpirlo temporalmente por mantenimiento o por causas ajenas a nosotros. Conserva siempre copia de tus archivos originales.'}
@@ -69,13 +72,13 @@ export function PrivacyView() {
         {'El responsable del tratamiento de tus datos es el operador de BookBrief. Contacto: ' + CONTACT + '.'}
       </Section>
       <Section title="Qué datos guardamos">
-        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores, progreso e historial de tiempo de escucha.\n• Plan y pagos: tu plan, su vencimiento y un identificador de cliente de Stripe; nunca los datos de tu tarjeta, que solo ve Stripe.\n• Para que la prueba gratuita sea una por persona conservamos una huella irreversible (hash) del correo que ya la usó, incluso si borras la cuenta; no permite reconstruir tu dirección.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
+        {'• Cuenta: nombre, correo y contraseña (solo en forma cifrada irreversible).\n• Tu contenido: los audios que subes, su título, autor, etiquetas, carpetas, portadas, marcadores, progreso e historial de tiempo de escucha.\n• Compartición: correos de destinatarios, invitaciones, permisos y contenido compartido.\n• Plan y pagos: tu plan, su vencimiento y un identificador de cliente de Stripe; nunca los datos de tu tarjeta, que solo ve Stripe.\n• Para que la prueba gratuita sea una por persona conservamos una huella irreversible (hash) del correo que ya la usó, incluso si borras la cuenta; no permite reconstruir tu dirección.\n• Seguridad: fechas de acceso, aplicaciones vinculadas y, en los registros del servidor, direcciones IP, durante un tiempo limitado.'}
       </Section>
       <Section title="Para qué los usamos">
         {'Para darte el servicio (iniciar sesión, guardar y reproducir tu biblioteca), mostrar estadísticas personales y administrativas de uso, enviarte correos necesarios (verificación y recuperación de contraseña) y proteger la cuenta y el servicio frente a abusos. Los administradores pueden consultar tus estadísticas y los títulos escuchados. No vendemos tus datos ni los usamos para publicidad.'}
       </Section>
       <Section title="Con quién se comparten">
-        {'Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Los pagos los procesa Stripe: recibe tu correo y los datos de pago que tú le des en su página; nosotros solo recibimos la confirmación y un identificador de cliente. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
+        {'Si compartes contenido, los destinatarios autorizados pueden ver tu nombre y los metadatos y audios que compartes. También enviamos invitaciones al correo indicado. Usamos Amazon Web Services para alojar el servicio, guardar tus archivos y enviar correos. Los pagos los procesa Stripe: recibe tu correo y los datos de pago que tú le des en su página; nosotros solo recibimos la confirmación y un identificador de cliente. Si eliges buscar información en Open Library, tu navegador enviará el título y autor indicados y tu dirección IP a ese servicio. Si eliges importar desde Google Drive, Google interviene en la autorización y selección, y BookBrief lee los archivos seleccionados para copiarlos a AWS. El acceso de Google es temporal y no guardamos sus tokens. Puedes revocar el permiso desde tu cuenta de Google. No compartimos tus datos con otros terceros, salvo por obligación legal.'}
       </Section>
       <Section title="Cookies">
         {'Solo usamos una cookie de sesión necesaria para mantenerte conectado. No usamos cookies de seguimiento ni publicidad.'}

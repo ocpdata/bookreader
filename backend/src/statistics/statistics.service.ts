@@ -7,6 +7,7 @@ import { SummaryStatus } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AdminService } from '../auth/admin.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SharingService } from '../sharing/sharing.service';
 
 const DAY_MS = 86400_000;
 /** Tope por sincronización en línea: las apps informan el tiempo escuchado cada pocos segundos. */
@@ -33,6 +34,7 @@ export class StatisticsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly admin: AdminService,
+    private readonly sharing: SharingService,
   ) {}
 
   async record(
@@ -42,9 +44,9 @@ export class StatisticsService {
     const summary = await this.prisma.summary.findFirst({
       where: {
         id: event.summaryId,
-        userId,
         deletedAt: null,
         status: SummaryStatus.READY,
+        AND: [await this.sharing.readableWhere(userId)],
       },
       select: { id: true },
     });
@@ -115,6 +117,11 @@ export class StatisticsService {
   async personal(userId: string, period?: string) {
     const since = periodStart(period);
     const live = { userId, status: SummaryStatus.READY, deletedAt: null };
+    const accessible = {
+      status: SummaryStatus.READY,
+      deletedAt: null,
+      AND: [await this.sharing.readableWhere(userId)],
+    };
     const [saved, inProgress, finished, favorites, totals, events] =
       await Promise.all([
         this.prisma.summary.count({ where: live }),
@@ -123,20 +130,20 @@ export class StatisticsService {
             userId,
             completed: false,
             positionSeconds: { gt: 0 },
-            summary: live,
+            summary: accessible,
           },
         }),
         this.prisma.playbackProgress.count({
-          where: { userId, completed: true, summary: live },
+          where: { userId, completed: true, summary: accessible },
         }),
-        this.prisma.favorite.count({ where: { userId, summary: live } }),
+        this.prisma.favorite.count({ where: { userId, summary: accessible } }),
         this.prisma.summary.aggregate({
           where: { userId },
           _sum: { sizeBytes: true },
           _count: { _all: true },
         }),
         this.prisma.listeningEvent.findMany({
-          where: { userId, occurredAt: { gte: since } },
+          where: { userId, occurredAt: { gte: since }, summary: { OR: [{ userId }, accessible] } },
           select: {
             durationMs: true,
             occurredAt: true,

@@ -26,6 +26,66 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Compartición de audios
+
+`SharingModule` exporta `SharingService`. `SHARING_ENABLED` está **desactivado por defecto**:
+solo el valor exacto `true` habilita crear, reenviar, aceptar y leer audios compartidos.
+Desactivarlo conserva lectura propia, listado, rechazo y revocación.
+La API usa sesiones web y las defensas globales de autenticación/CSRF; no admite tokens de dispositivo.
+
+Rutas (con el prefijo global `/api`):
+
+- `GET /shares/config` → `{ enabled: boolean }`, para comprobar disponibilidad.
+- `POST /shares`, cuerpo `{ email, scope: 'LIBRARY' | 'ITEMS', summaryIds?: string[] }` → `Share`.
+- `GET /shares/sent` y `GET /shares/received` → `Share[]`.
+- `POST /shares/:id/accept`, `/reject`, `/resend` y `DELETE /shares/:id` → `Share`.
+
+`Share` contiene `id`, `email`, `ownerName`, `scope`, `status`,
+`createdAt`, `expiresAt`, `summaryIds` y `summaries` (títulos y autores disponibles de la
+selección mientras la invitación esté vigente o aceptada). Fechas ISO en JSON. Estados:
+`PENDING`, `ACCEPTED`, `REJECTED`, `REVOKED`. `expiresAt` es el plazo de respuesta:
+un pendiente caducado devuelve 409 al aceptar/rechazar; un aceptado **no caduca**,
+ni pierde permiso por vencer la prueba comercial.
+
+Crear requiere propietario activo y correo verificado, pero **no consulta si el destinatario existe**.
+Listar recibidas y aceptar/rechazar requieren una sesión de cuenta activa con correo verificado
+coincidente después de recortar espacios y convertir a minúsculas. No se vincula la cuenta al invitar
+ni al listar; `recipientId` solo se fija al decidir. Borrar esa cuenta elimina sus permisos vinculados
+por cascada y las invitaciones aún no vinculadas dirigidas a su correo.
+
+`LIBRARY` incluye los futuros audios; `ITEMS` exige 1–200 ids únicos de audios propios READY sin borrar.
+Son referencias, no copias. Distintos ámbitos y selecciones pueden coexistir. La huella única de
+propietario/correo/ámbito/ids normalizados y ordenados evita duplicados vigentes del mismo contenido.
+Las decisiones y revocaciones bloquean la fila del permiso; crear y reenviar serializan cuotas
+por propietario en MySQL.
+
+Reenviar solo permite al propietario renovar un `PENDING` (incluso caducado) durante 7 días,
+conservando el id y la selección. Revalida disponibilidad de la selección y evita otro permiso
+vigente idéntico. Durante la entrega no puede aceptarse; un fallo restaura plazo/entrega anteriores
+sin deshacer una revocación concurrente. Crear con fallo de entrega revoca lo no entregado.
+Ambos devuelven 503 y registran el fallo sin direcciones ni contenido del proveedor.
+El correo enlaza únicamente al origen configurado + `/compartidos`, sin tokens ni ids:
+`APP_PUBLIC_URL` debe ser HTTPS explícito en producción, sin credenciales.
+
+`readableWhere(userId): Promise<Prisma.SummaryWhereInput>` devuelve owned OR permisos aceptados
+mediante relaciones evaluadas dentro de la consulta de Summary, sin precargar ids ni cachear acceso.
+`canRead(userId, summaryId): Promise<boolean>` usa ese mismo predicado.
+Las rutas web de lectura agregan filtros READY/deletedAt y mantienen las escrituras exclusivas del
+propietario. La reproducción compartida comprueba el permiso en cada petición de rangos; las apps
+Audiobookshelf siguen limitadas al contenido propio.
+
+Antiabuso: máximo 100 permisos vigentes por propietario; 20 intentos de correo/hora y 100/día
+persistidos en MySQL, incluidos reenvíos y fallos. Además, 30 envíos/IP/hora y 3/dirección/hora en
+memoria por instancia. Para despliegues múltiples, mover estos dos últimos límites a Redis/WAF
+y limitar solicitudes generales por IP en el proxy; no confiar en `X-Forwarded-For` arbitrario.
+La limitación nunca depende de la existencia de la cuenta destinataria.
+
+`SharingService.cleanup()` se ejecuta cada hora (salvo `PURGE_ENABLED=false`):
+borra pendientes 30 días después de caducar y rechazadas/revocadas 30 días después de su última
+actualización, además de intentos de correo de más de 30 días. Nunca borra permisos aceptados por edad.
+La retención permite renovar pendientes caducadas y mostrar decisiones recientes.
+Si se desactiva el temporizador, programar este método externamente para mantener la retención.
+
 ## Project setup
 
 ```bash

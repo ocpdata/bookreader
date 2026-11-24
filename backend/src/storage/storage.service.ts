@@ -10,12 +10,13 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { parseStream } from 'music-metadata';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { fragmentedMp4Duration } from './fragmented-mp4';
 
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const PLAYBACK_TTL_SECONDS = 60 * 60;
-const AUDIO_PARSE_TIMEOUT_MS = 45_000;
+const AUDIO_READ_IDLE_TIMEOUT_MS = 45_000;
+const AUDIO_PARSE_MAX_TIMEOUT_MS = 15 * 60_000;
 
 /**
  * Únicas claves que el servidor puede borrar: el audio (`audios/{userId}/{uuid}/audio.ext` o el formato
@@ -37,6 +38,14 @@ export interface AudioInfo {
   durationSeconds: number;
   /** Portada incrustada en las etiquetas del archivo, sin procesar. */
   picture: Buffer | null;
+}
+
+export class InvalidAudioError extends Error {}
+
+export class AudioStorageError extends Error {
+  constructor(message: string, readonly originalError?: unknown) {
+    super(message);
+  }
 }
 
 @Injectable()
@@ -88,38 +97,82 @@ export class StorageService {
     return (await this.getAudioInfo(key, contentType, sizeBytes)).durationSeconds;
   }
 
-  /** Duración y portada incrustada, en una sola lectura del archivo. */
+  /** Duración y portada incrustada; los MP4 fragmentados pueden necesitar una segunda lectura. */
   async getAudioInfo(key: string, contentType: string, sizeBytes: number): Promise<AudioInfo> {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), AUDIO_PARSE_TIMEOUT_MS);
+    const maxTimer = setTimeout(() => abort.abort(), AUDIO_PARSE_MAX_TIMEOUT_MS);
+    let idleTimer: NodeJS.Timeout | undefined;
     let body: Readable | undefined;
-    try {
-      const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
-        abortSignal: abort.signal,
+    let progress: Transform | undefined;
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => abort.abort(), AUDIO_READ_IDLE_TIMEOUT_MS);
+    };
+    abort.signal.addEventListener('abort', () => {
+      body?.destroy();
+      progress?.destroy(new Error('Tiempo de lectura agotado'));
+    });
+    resetIdleTimer();
+
+    const read = async <T>(consume: (stream: Readable) => Promise<T>): Promise<T> => {
+      let sourceError: unknown;
+      try {
+        const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+          abortSignal: abort.signal,
+        });
+        body = object.Body as Readable;
+      } catch (error) {
+        throw new AudioStorageError('No se pudo leer el audio de S3', error);
+      }
+      if (abort.signal.aborted) {
+        body.destroy();
+        throw new AudioStorageError('Tiempo de lectura agotado');
+      }
+      progress = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          resetIdleTimer();
+          callback(null, chunk);
+        },
       });
-      body = object.Body as Readable;
-      const metadata = await parseStream(body, { mimeType: contentType, size: sizeBytes }, { duration: true });
+      const currentBody = body;
+      const currentProgress = progress;
+      currentBody.on('error', (error) => {
+        sourceError = error;
+        currentProgress.destroy(error);
+      });
+      try {
+        const result = consume(currentProgress);
+        currentBody.pipe(currentProgress);
+        return await result;
+      } catch (error) {
+        if (abort.signal.aborted || sourceError) {
+          throw new AudioStorageError('No se pudo leer el audio de S3', sourceError ?? error);
+        }
+        throw error;
+      } finally {
+        currentBody.destroy();
+        currentProgress.destroy();
+        body = undefined;
+        progress = undefined;
+      }
+    };
+    try {
+      const metadata = await read((stream) =>
+        parseStream(stream, { mimeType: contentType, size: sizeBytes }, { duration: true }),
+      );
       let duration = metadata.format.duration;
-      if (!duration && contentType === 'audio/mp4') duration = (await this.fragmentedDuration(key, abort.signal)) ?? undefined;
+      if (!duration && contentType === 'audio/mp4') duration = (await read(fragmentedMp4Duration)) ?? undefined;
       if (!duration || !Number.isFinite(duration) || duration <= 0) {
-        throw new Error('No se pudo determinar la duración del audio');
+        throw new InvalidAudioError('No se pudo determinar la duración del audio');
       }
       const picture = metadata.common.picture?.[0]?.data;
       return { durationSeconds: Math.max(1, Math.round(duration)), picture: picture ? Buffer.from(picture) : null };
+    } catch (error) {
+      if (error instanceof AudioStorageError || error instanceof InvalidAudioError) throw error;
+      throw new InvalidAudioError('No se pudo analizar el audio');
     } finally {
-      clearTimeout(timer);
-      body?.destroy();
-    }
-  }
-
-  /** MP4 fragmentado (DASH): la cabecera declara duración 0, así que se suma la de los fragmentos. */
-  private async fragmentedDuration(key: string, signal: AbortSignal): Promise<number | null> {
-    const object = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: signal });
-    const body = object.Body as Readable;
-    try {
-      return await fragmentedMp4Duration(body);
-    } finally {
-      body.destroy();
+      clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
     }
   }
 

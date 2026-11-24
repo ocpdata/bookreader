@@ -62,7 +62,7 @@ export class AbsService {
 
   async progressList(userId: string) {
     const rows = await this.prisma.playbackProgress.findMany({
-      where: { userId, summary: { status: SummaryStatus.READY, deletedAt: null } },
+      where: { userId, summary: { userId, status: SummaryStatus.READY, deletedAt: null } },
       include: { summary: { select: { id: true, durationSeconds: true } } },
       orderBy: { updatedAt: 'desc' },
     });
@@ -79,7 +79,7 @@ export class AbsService {
   /** Marcadores del usuario (de un audio o de todos) en el formato de las apps; no incluye audios en la papelera. */
   async bookmarks(userId: string, itemId?: string) {
     const rows = await this.prisma.bookmark.findMany({
-      where: { userId, ...(itemId ? { summaryId: itemId } : {}), summary: { status: SummaryStatus.READY, deletedAt: null } },
+      where: { userId, ...(itemId ? { summaryId: itemId } : {}), summary: { userId, status: SummaryStatus.READY, deletedAt: null } },
       orderBy: [{ summaryId: 'asc' }, { timeSeconds: 'asc' }],
     });
     return rows.map(bookmarkOf);

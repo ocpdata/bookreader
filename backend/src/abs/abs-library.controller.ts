@@ -141,6 +141,7 @@ export class AbsLibraryController {
   /** Portada del audio; sin portada responde 404 y las apps muestran su marcador. */
   @Get('items/:id/cover')
   async cover(@CurrentUser() userId: string, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
+    await this.abs.item(userId, id);
     const stream = await this.summaries.openCover(id, userId).catch(() => {
       throw new NotFoundException('Sin portada');
     });

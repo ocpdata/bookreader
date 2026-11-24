@@ -427,6 +427,23 @@ describe('Summaries (e2e)', () => {
     expect(row?.durationSeconds).toBeNull();
   });
 
+  it('informa los errores de almacenamiento sin declarar inválido el archivo y permite reintentar', async () => {
+    const created = await createSummary(DEFAULT_USER_ID);
+    const id = created.body.summary.id;
+    storage.objects.set(created.body.summary.s3Key, fixture('sample.mp3'));
+    jest.spyOn(storage, 'getObjectSize').mockRejectedValueOnce(new Error('S3 no disponible'));
+    jest.spyOn(storage, 'getAudioInfo').mockRejectedValueOnce(new Error('S3 no disponible'));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(app.getHttpServer())
+        .post(`/api/summaries/${id}/complete`)
+        .set(as(DEFAULT_USER_ID))
+        .expect(502);
+      expect(response.body.message).toContain('No se pudo leer');
+      expect((await prisma.summary.findUnique({ where: { id } }))?.status).toBe('PENDING');
+    }
+    await request(app.getHttpServer()).post(`/api/summaries/${id}/complete`).set(as(DEFAULT_USER_ID)).expect(200);
+  });
+
   it('aísla los datos entre usuarios (404 en lugar de 403)', async () => {
     const mine = await createReady(DEFAULT_USER_ID);
     const api = request(app.getHttpServer());
@@ -1414,7 +1431,7 @@ describe('Summaries (e2e)', () => {
 
       const res = await upload(audio.id, await png());
       expect(res.status).toBe(200);
-      expect(res.body.coverUrl).toMatch(new RegExp(`^/api/summaries/${audio.id}/cover\\?v=[0-9a-f]{8}$`));
+      expect(res.body.coverUrl).toMatch(new RegExp(`^/api/summaries/${audio.id}/cover\\?v=[0-9a-f]{8}&access=1$`));
       expect(res.body).not.toHaveProperty('coverKey');
       expect(coverKeys()).toHaveLength(1);
       expect(coverKeys()[0]).toContain(`audios/${A}/`);
@@ -1426,7 +1443,7 @@ describe('Summaries (e2e)', () => {
       });
       expect(img.status).toBe(200);
       expect(img.headers['content-type']).toBe('image/jpeg');
-      expect(img.headers['cache-control']).toContain('immutable');
+      expect(img.headers['cache-control']).toContain('no-store');
       const meta = await sharp(img.body).metadata();
       expect([meta.format, meta.width, meta.height]).toEqual(['jpeg', 800, 600]);
 

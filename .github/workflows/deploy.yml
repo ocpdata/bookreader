@@ -35,6 +35,7 @@ jobs:
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
       APP_DOMAIN: ${{ vars.APP_DOMAIN }}
       REGISTRATION_MODE: ${{ vars.REGISTRATION_MODE || 'closed' }}
+      SHARING_ENABLED: ${{ vars.SHARING_ENABLED || 'false' }}
       # Stripe: con los secretos/variables vacíos, los pagos quedan desactivados (los botones no aparecen).
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -132,6 +133,7 @@ jobs:
             echo "APP_PUBLIC_URL=https://${APP_DOMAIN}"
             # closed | invite | open (variable de GitHub REGISTRATION_MODE; por defecto cerrado).
             echo "REGISTRATION_MODE=${REGISTRATION_MODE}"
+            echo "SHARING_ENABLED=${SHARING_ENABLED}"
             # Suscripciones (Stripe). Vacíos = pagos desactivados.
             echo "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}"
             echo "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}"

@@ -35,6 +35,16 @@ rollback() {
       fi
       return
     fi
+    # Las versiones anteriores pueden revelar progreso o estadísticas de contenido compartido revocado.
+    if [[ -f "${release_root}/backend/dist/sharing/sharing.service.js" \
+      && ! -f "${previous_release}/backend/dist/sharing/sharing.service.js" ]]; then
+      if sudo systemctl stop bookreader-api; then
+        echo "::error::Rollback automático bloqueado: la versión anterior no aísla los datos compartidos. Despliega una versión compatible." >&2
+      else
+        echo "::error::Rollback bloqueado y no se pudo detener bookreader-api; revisa el servicio manualmente." >&2
+      fi
+      return
+    fi
     ln -sfn "$previous_release" "$current_link"
     sudo systemctl restart bookreader-api || true
     echo "Revertido a ${previous_release}" >&2

@@ -11,16 +11,19 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { MAX_COVER_BYTES } from '../covers/cover-image';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SummariesService } from './summaries.service';
+import { StorageService } from '../storage/storage.service';
+import { serveAudio } from '../storage/serve-audio';
 import {
   CreateSummaryDto,
   DuplicateQueryDto,
@@ -33,7 +36,7 @@ import {
 
 @Controller('summaries')
 export class SummariesController {
-  constructor(private readonly summaries: SummariesService) {}
+  constructor(private readonly summaries: SummariesService, private readonly storage: StorageService) {}
 
   @Get()
   list(@CurrentUser() userId: string, @Query() query: ListSummariesQuery) {
@@ -70,7 +73,7 @@ export class SummariesController {
 
   @Get(':id')
   get(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
-    return this.summaries.get(id, userId);
+    return this.summaries.getReadable(id, userId);
   }
 
   @Post()
@@ -78,7 +81,7 @@ export class SummariesController {
     return this.summaries.create(userId, dto);
   }
 
-  /** Portada del audio (JPEG normalizado). La URL lleva ?v= con la versión, así que se puede cachear sin riesgo. */
+  /** Portada del audio (JPEG normalizado). No se cachea para respetar cambios de acceso. */
   @Get(':id/cover')
   async cover(
     @CurrentUser() userId: string,
@@ -86,7 +89,7 @@ export class SummariesController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const stream = await this.summaries.openCover(id, userId);
-    res.set({ 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+    res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
     return new StreamableFile(stream, { type: 'image/jpeg' });
   }
 
@@ -153,6 +156,17 @@ export class SummariesController {
   @HttpCode(200)
   playback(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.summaries.playback(id, userId);
+  }
+
+  @Get(':id/audio')
+  async audio(
+    @CurrentUser() userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const audio = await this.summaries.readableAudio(id, userId);
+    return serveAudio(this.storage, req, res, audio);
   }
 
   @Put(':id/progress')

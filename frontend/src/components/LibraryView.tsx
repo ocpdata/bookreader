@@ -269,6 +269,7 @@ export default function LibraryView({ categories, categoriesReady, onCreateCateg
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Tus libros e ideas, en un solo lugar.</Typography>
         </Box>
         <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
+          <Button onClick={() => navigate('/invitaciones')}>Compartir</Button>
           <Button disabled={!categoriesReady} onClick={() => setCategoriesOpen(true)}>Categorías</Button>
           <Button onClick={() => setFolderDialog({ folder: null })}>+ Nueva carpeta</Button>
           <Button variant="contained" onClick={() => navigate(`/audios/nuevo${currentId ? `?carpeta=${currentId}` : ''}`)}>

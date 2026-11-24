@@ -48,6 +48,7 @@ export class AccountEraser {
    */
   async deleteAccount(userId: string): Promise<{ audios: number }> {
     if (userId === OWNER_ID) throw new Error('La cuenta propietaria no se puede eliminar');
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true } });
     const rows = await this.prisma.summary.findMany({ where: { userId }, select: { id: true, s3Key: true, coverKey: true } });
 
     const failed = new Set(await this.storage.deleteObjects(this.keysOf(rows)));
@@ -60,6 +61,9 @@ export class AccountEraser {
 
     await this.prisma.$transaction([
       this.prisma.summary.deleteMany({ where: { userId } }),
+      ...(user.email
+        ? [this.prisma.share.deleteMany({ where: { email: user.email.trim().toLowerCase(), recipientId: null } })]
+        : []),
       // Una carpeta anidada apunta a su padre con una clave foránea: se sueltan antes de borrarlas todas.
       this.prisma.folder.updateMany({ where: { userId }, data: { parentId: null } }),
       this.prisma.folder.deleteMany({ where: { userId } }),

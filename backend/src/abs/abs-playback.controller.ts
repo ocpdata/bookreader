@@ -4,12 +4,10 @@ import { AllowApiToken } from '../auth/allow-api-token.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import { StorageService } from '../storage/storage.service';
+import { serveAudio } from '../storage/serve-audio';
 import { inoOf } from './abs.mapper';
 import { AbsService } from './abs.service';
 import { PlaySessionService } from './play-session.service';
-
-// Un solo rango "bytes=a-b" (los reproductores piden así); cualquier otra forma se ignora y se envía completo.
-const SINGLE_RANGE = /^bytes=\d*-\d*$/;
 
 @AllowApiToken()
 @Controller()
@@ -61,7 +59,7 @@ export class AbsPlaybackController {
     const audio = index === '1' ? await this.sessions.findForStreaming(sessionId) : null;
     if (!audio) throw new NotFoundException('Sesión no encontrada');
 
-    return this.serveAudio(req, res, audio);
+    return serveAudio(this.storage, req, res, audio);
   }
 
   /** Descarga de un archivo de audio para escuchar sin conexión (Bearer o ?token=). Con /download se sirve como adjunto. */
@@ -75,50 +73,6 @@ export class AbsPlaybackController {
   ) {
     const item = await this.abs.item(userId, id);
     if (ino !== inoOf(id)) throw new NotFoundException('Archivo no encontrado');
-    return this.serveAudio(req, res, item, req.path.endsWith('/download') ? item.originalFilename : undefined);
-  }
-
-  /** Sirve un audio desde S3 con soporte de Range (los reproductores y descargadores piden por rangos). */
-  private async serveAudio(
-    req: Request,
-    res: Response,
-    audio: { s3Key: string; contentType: string; sizeBytes: number },
-    attachmentName?: string,
-  ) {
-    const range = typeof req.headers.range === 'string' && SINGLE_RANGE.test(req.headers.range) ? req.headers.range : undefined;
-    let object;
-    try {
-      object = await this.storage.getObjectRange(audio.s3Key, range);
-    } catch (error) {
-      if ((error as { name?: string }).name === 'InvalidRange') {
-        res.status(416).set('Content-Range', `bytes */${audio.sizeBytes}`).end();
-        return;
-      }
-      res.status(502).json({ message: 'No se pudo leer el audio' });
-      return;
-    }
-
-    res.status(object.partial ? 206 : 200);
-    res.set({
-      'Content-Type': audio.contentType,
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'private, no-store',
-      'X-Content-Type-Options': 'nosniff',
-      ...(attachmentName ? { 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(attachmentName)}` } : {}),
-    });
-    if (object.contentLength !== undefined) res.set('Content-Length', String(object.contentLength));
-    if (object.contentRange) res.set('Content-Range', object.contentRange);
-    if (object.etag) res.set('ETag', object.etag);
-    if (object.lastModified) res.set('Last-Modified', object.lastModified.toUTCString());
-
-    // Si el cliente corta la descarga (cambia de posición), se libera la conexión con S3.
-    res.on('close', () => object.body.destroy());
-    if (req.method === 'HEAD') {
-      object.body.destroy();
-      res.end();
-      return;
-    }
-    object.body.on('error', () => res.destroy());
-    object.body.pipe(res);
+    return serveAudio(this.storage, req, res, item, req.path.endsWith('/download') ? item.originalFilename : undefined);
   }
 }

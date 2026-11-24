@@ -4,6 +4,8 @@ import type {
   HomeData,
   LibraryFilters,
   Progress,
+  Share,
+  ShareFields,
   Summary,
   SummaryFields,
   TagSuggestion,
@@ -204,6 +206,32 @@ export const revokeDevice = (id: string) => request<void>(`/auth/devices/${id}`,
 export const revokeAllDevices = () => request<void>('/auth/devices', { method: 'DELETE' })
 
 export const listCategories = () => request<SelectableCategory[]>('/categories')
+
+export const createShare = (fields: ShareFields) =>
+  request<Share>('/shares', { method: 'POST', body: JSON.stringify(fields) })
+
+export const getSharingConfig = () => request<{ enabled: boolean }>('/shares/config')
+
+export const listSentShares = () => request<Share[]>('/shares/sent')
+
+export const listReceivedShares = () => request<Share[]>('/shares/received')
+
+export const acceptShare = (id: string) =>
+  request<void>(`/shares/${encodeURIComponent(id)}/accept`, { method: 'POST' })
+
+export const rejectShare = (id: string) =>
+  request<void>(`/shares/${encodeURIComponent(id)}/reject`, { method: 'POST' })
+
+export const revokeShare = (id: string) =>
+  request<void>(`/shares/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
+export const resendShare = (id: string) =>
+  request<void>(`/shares/${encodeURIComponent(id)}/resend`, { method: 'POST' })
+
+export const listSharedItems = async () => {
+  await settlePendingSaves()
+  return request<Summary[]>('/shares/items')
+}
 
 export const createCategory = (name: string) =>
   request<SelectableCategory>('/categories', { method: 'POST', body: JSON.stringify({ name }) })
