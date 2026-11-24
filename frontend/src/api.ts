@@ -131,6 +131,8 @@ export const logout = () => request<void>('/auth/logout', { method: 'POST' })
 
 export const getMe = () => request<CurrentUser>('/auth/me')
 
+export const getMobileConfig = () => request<{ enabled: boolean; serverUrl: string | null }>('/auth/mobile-config')
+
 export type RegistrationMode = 'closed' | 'invite' | 'open'
 
 export const getAuthConfig = () => request<{ registration: RegistrationMode }>('/auth/config')

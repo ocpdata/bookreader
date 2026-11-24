@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AbsCompatModule } from './abs/abs.module';
+import { absCompatEnabled } from './abs/abs.constants';
 import { AccountsModule } from './accounts/accounts.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
@@ -30,7 +31,7 @@ import { StatisticsModule } from './statistics/statistics.module';
     SummariesModule,
     StatisticsModule,
     BillingModule,
-    ...(process.env.ABS_COMPAT_ENABLED === 'false' ? [] : [AbsCompatModule]),
+    ...(absCompatEnabled() ? [AbsCompatModule] : []),
   ],
   controllers: [HealthController],
 })

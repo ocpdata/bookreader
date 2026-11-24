@@ -90,6 +90,8 @@ Cada usuario tiene su posición en cada audio (`playback_progress`); la lista y 
 
 ## Pantallas
 
+Sin sesión, `/` muestra una portada pública con vistas ilustrativas del recorrido de carga, organización y escucha. Los ejemplos usan datos ficticios; el botón de registro depende del modo de registro configurado.
+
 `/` es el **inicio**: continuar escuchando (empezados y no terminados, el último escuchado primero), agregados recientemente, favoritos (el marcado más reciente primero) y categorías con su conteo, más una búsqueda que lleva a la biblioteca. `/biblioteca` es la lista completa con búsqueda, filtros y orden. `/papelera` lista lo eliminado. Luego están la ficha con el reproductor (`/audios/:id`) y el formulario de alta y edición (`/audios/nuevo`, `/audios/:id/editar`).
 
 En la biblioteca se puede elegir entre lista y cuadrícula; la preferencia se guarda en el navegador. Los filtros activos se pueden quitar individualmente y las acciones de edición, movimiento y eliminación están en el menú de cada audio.
@@ -114,6 +116,7 @@ Un proceso interno (`PurgeService`, cada 6 horas) borra la papelera vencida y la
 
 BookBrief habla la API de Audiobookshelf (ABS) para que apps como **Absorb** (Android/iOS) y **AudioBooth** (iOS) puedan escuchar la biblioteca. En la app: servidor `https://audio.digitalvs.com`, usuario = el correo de la cuenta y la misma contraseña de la web. Se desactiva con `ABS_COMPAT_ENABLED=false`.
 
+- **Guía en la web**: en «Mi cuenta» → «Escuchar en el móvil» se muestran las apps y los pasos de conexión. La dirección se toma de `APP_PUBLIC_URL` y debe ser una URL HTTPS en la raíz, accesible desde el móvil; si no está configurada o apunta a localhost, se muestra un aviso en lugar de una dirección.
 - **Qué funciona**: una biblioteca "Resúmenes" con todos los audios del usuario (lista con orden, paginación y filtros por progreso, género=categoría, etiqueta, autor y narrador), detalle, búsqueda, inicio (continuar escuchando, agregados recientemente, escuchar de nuevo), autores y narradores, portadas, reproducción con progreso sincronizado con la web (sesiones `sync`/`close`, `PATCH /api/me/progress`, progreso grabado sin conexión) y ocultar de "continuar escuchando". Los **marcadores** se guardan por usuario y audio (se identifican por su posición, hasta 200 por audio) y viajan también en el objeto de usuario. Las **carpetas con audios** se ofrecen como colecciones de solo lectura (nombre = ruta completa, con sus audios directos). Las **descargas sin conexión** usan `GET /api/items/:id/file/:ino[/download]` (Bearer o `?token=`, con `Range` y `HEAD`; el `ino` sale de las pistas del detalle) y lo escuchado sin conexión se sincroniza. Las series y las listas de reproducción se devuelven vacías, y el historial y las estadísticas también. Las apps son de solo lectura: editar, borrar y subir se hace en la web (los permisos `update`, `delete` y `upload` van en `false`).
 - **Rutas**: viven en la raíz (`/ping`, `/status`, `/login`, `/logout`, `/public/session/...`) y bajo `/api` (`/api/libraries`, `/api/items`, `/api/me`, `/api/session`...), por eso la pantalla web de acceso pasó a `/entrar` (`GET /login` redirige).
 - **Versión anunciada**: `2.22.0`, el mínimo desde el que las apps usan la URL de audio pública por sesión.

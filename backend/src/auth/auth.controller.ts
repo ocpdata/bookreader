@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { absCompatEnabled, mobileServerUrl } from '../abs/abs.constants';
 import { ApiTokenService } from './api-token.service';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto, DeleteAccountDto, LoginDto } from './auth.dto';
@@ -47,6 +48,11 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() userId: string) {
     return this.auth.me(userId);
+  }
+
+  @Get('mobile-config')
+  mobileConfig() {
+    return { enabled: absCompatEnabled(), serverUrl: mobileServerUrl() };
   }
 
   /** Apps vinculadas (Absorb, AudioBooth...). Solo con la sesión web: un token de dispositivo no puede gestionarlos. */

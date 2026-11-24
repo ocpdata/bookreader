@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 
 const TEAL = '#147D85'
 const TEAL_LIGHT = '#E6F3F3'
-const INK = '#172033'
-const MUTED = '#596579'
 const LINE = '#E4E7EC'
 
 export type LandingIconName = 'upload' | 'folder' | 'play' | 'resume' | 'search' | 'image' | 'trash' | 'chart' | 'lock'
@@ -61,46 +61,121 @@ export function LandingIcon({ name, size = 52 }: { name: LandingIconName; size?:
   )
 }
 
-/** Reproductor ilustrado con una carpeta y una estrella flotando: resume la idea de biblioteca que se escucha. */
-export function HeroArt() {
+const examples = [
+  { title: 'Ideas para crecer', author: 'Ejemplo de autor', color: '#147D85', category: 'Aprendizaje' },
+  { title: 'Un nuevo comienzo', author: 'Ejemplo de autor', color: '#C77A5D', category: 'Bienestar' },
+]
+
+function ExampleCover({ title, color, small = false }: { title: string; color: string; small?: boolean }) {
   return (
     <Box
-      component="svg"
-      aria-hidden="true"
-      viewBox="0 0 360 300"
-      sx={{ width: '100%', maxWidth: 440, height: 'auto', display: 'block', mx: 'auto' }}
+      sx={{
+        width: small ? 58 : 78, height: small ? 74 : 100, flexShrink: 0, borderRadius: 1.5,
+        bgcolor: color, color: '#fff', p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      }}
     >
-      <circle cx="180" cy="150" r="140" fill={TEAL_LIGHT} />
-      <rect x="40" y="36" width="280" height="226" rx="22" fill="#fff" stroke={LINE} strokeWidth="2" />
-
-      <rect x="64" y="62" width="92" height="116" rx="12" fill={TEAL} />
-      <rect x="76" y="76" width="68" height="8" rx="4" fill="#fff" opacity="0.9" />
-      <rect x="76" y="92" width="46" height="6" rx="3" fill="#fff" opacity="0.55" />
-      <path d="M92 178v-34l14 9 14-9v34" fill="#fff" opacity="0.9" />
-
-      <rect x="172" y="72" width="116" height="12" rx="6" fill={INK} />
-      <rect x="172" y="94" width="84" height="9" rx="4.5" fill={MUTED} opacity="0.5" />
-      <rect x="172" y="116" width="100" height="9" rx="4.5" fill={LINE} />
-      <rect x="172" y="134" width="70" height="9" rx="4.5" fill={LINE} />
-
-      <rect x="64" y="200" width="232" height="6" rx="3" fill={LINE} />
-      <rect x="64" y="200" width="128" height="6" rx="3" fill={TEAL} />
-      <circle cx="192" cy="203" r="8" fill={TEAL} />
-
-      <g transform="translate(268 8)">
-        <rect width="86" height="40" rx="12" fill="#fff" stroke={LINE} strokeWidth="2" />
-        <path d="M16 14a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H18a2 2 0 0 1-2-2z" fill={TEAL_LIGHT} stroke={TEAL} strokeWidth="1.6" strokeLinejoin="round" />
-        <rect x="42" y="15" width="30" height="6" rx="3" fill={LINE} />
-        <rect x="42" y="25" width="20" height="6" rx="3" fill={LINE} />
-      </g>
-
-      <g transform="translate(14 120)">
-        <rect width="62" height="44" rx="12" fill="#fff" stroke={LINE} strokeWidth="2" />
-        <path d="M31 10l3.6 7.4 8.1 1.1-5.9 5.7 1.4 8.1-7.2-3.9-7.2 3.9 1.4-8.1-5.9-5.7 8.1-1.1z" fill="#F5B83D" />
-      </g>
-
-      <circle cx="180" cy="236" r="16" fill={TEAL} />
-      <path d="M176 229v14l12-7z" fill="#fff" />
+      <Typography sx={{ fontSize: small ? 9 : 11, fontWeight: 700, lineHeight: 1.2 }}>{title}</Typography>
+      <Box sx={{ width: '50%', height: 3, borderRadius: 1, bgcolor: 'rgba(255,255,255,.55)' }} />
     </Box>
+  )
+}
+
+function ExampleFrame({ children }: { children: ReactNode }) {
+  return (
+    <Box sx={{ width: '100%', maxWidth: 480, mx: 'auto' }}>
+      <Box aria-hidden="true" sx={{ bgcolor: '#fff', border: 1, borderColor: LINE, borderRadius: 3, overflow: 'hidden', boxShadow: '0 20px 55px rgba(23, 32, 51, .10)' }}>
+        <Stack direction="row" sx={{ px: 2, py: 1, alignItems: 'center', justifyContent: 'space-between', borderBottom: 1, borderColor: LINE }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 800, color: TEAL }}>● BookBrief</Typography>
+          <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>Inicio　 Biblioteca　 Estadísticas</Typography>
+        </Stack>
+        <Box sx={{ p: { xs: 2, sm: 3 } }}>{children}</Box>
+      </Box>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1 }}>
+        Vista ilustrativa con datos de ejemplo
+      </Typography>
+    </Box>
+  )
+}
+
+function ExampleAudio({ title, author, color, category, progress = false }: typeof examples[number] & { progress?: boolean }) {
+  return (
+    <Stack direction="row" spacing={1.5} sx={{ p: 1.5, border: 1, borderColor: LINE, borderRadius: 2, alignItems: 'flex-start' }}>
+      <ExampleCover title={title} color={color} small />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{title}</Typography>
+        <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.3 }}>{author} · 24 min</Typography>
+        <Typography sx={{ fontSize: 10, color: TEAL, mt: 0.5 }}>{category}　☆</Typography>
+        {progress && (
+          <>
+            <Box sx={{ height: 4, bgcolor: LINE, borderRadius: 2, mt: 1 }}>
+              <Box sx={{ width: '60%', height: '100%', bgcolor: TEAL, borderRadius: 2 }} />
+            </Box>
+            <Typography sx={{ fontSize: 10, color: 'text.secondary', mt: 0.5 }}>Escuchado hasta 14:30 de 24:00</Typography>
+          </>
+        )}
+      </Box>
+    </Stack>
+  )
+}
+
+export function HeroArt() {
+  return (
+    <ExampleFrame>
+      <Typography sx={{ fontSize: 10, color: TEAL, fontWeight: 700, letterSpacing: '.08em' }}>TU ESPACIO DE ESCUCHA</Typography>
+      <Typography sx={{ fontSize: 21, fontWeight: 800, mt: 0.5 }}>Inicio</Typography>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, mt: 2, mb: 1 }}>Continuar escuchando</Typography>
+      <ExampleAudio {...examples[0]} progress />
+      <Typography sx={{ fontSize: 12, fontWeight: 700, mt: 2, mb: 1 }}>Agregados recientemente</Typography>
+      <ExampleAudio {...examples[1]} />
+    </ExampleFrame>
+  )
+}
+
+export function ProductExample({ type }: { type: 'upload' | 'library' | 'listen' }) {
+  if (type === 'upload') {
+    return (
+      <ExampleFrame>
+        <Typography sx={{ fontSize: 18, fontWeight: 800, mb: 2 }}>Agregar resumen</Typography>
+        <Stack spacing={1.2}>
+          {['Título · Ideas para crecer', 'Autor · Ejemplo de autor', 'Categoría · Aprendizaje', 'Archivo de audio · MP3 o M4A'].map((field) => (
+            <Box key={field} sx={{ border: 1, borderColor: LINE, borderRadius: 1.5, px: 1.5, py: 1, fontSize: 12, color: 'text.secondary' }}>{field}</Box>
+          ))}
+          <Typography sx={{ fontSize: 11, color: TEAL }}>También puedes subir varios audios a la vez</Typography>
+        </Stack>
+      </ExampleFrame>
+    )
+  }
+
+  if (type === 'library') {
+    return (
+      <ExampleFrame>
+        <Typography sx={{ fontSize: 18, fontWeight: 800, mb: 1.5 }}>Mi biblioteca</Typography>
+        <Box sx={{ border: 1, borderColor: LINE, borderRadius: 1.5, p: 1, fontSize: 11, color: 'text.secondary', mb: 1.5 }}>Buscar por título, autor o etiqueta</Box>
+        <Typography sx={{ fontSize: 11, color: TEAL, mb: 1.5 }}>☆ Favoritos　 ·　 Categoría　 ·　 Etiqueta</Typography>
+        <Stack spacing={1}>
+          {examples.map((example) => <ExampleAudio key={example.title} {...example} />)}
+        </Stack>
+      </ExampleFrame>
+    )
+  }
+
+  return (
+    <ExampleFrame>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <ExampleCover title={examples[0].title} color={examples[0].color} />
+        <Box>
+          <Typography sx={{ fontSize: 17, fontWeight: 800 }}>{examples[0].title}</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>Ejemplo de autor · 24 min</Typography>
+          <Typography sx={{ fontSize: 11, color: TEAL, mt: 1 }}>Retomando desde 14:30</Typography>
+        </Box>
+      </Stack>
+      <Box sx={{ height: 5, bgcolor: LINE, borderRadius: 2, mt: 3 }}>
+        <Box sx={{ width: '60%', height: '100%', bgcolor: TEAL, borderRadius: 2 }} />
+      </Box>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', mt: 0.5, color: 'text.secondary', fontSize: 10 }}>
+        <span>14:30</span><span>24:00</span>
+      </Stack>
+      <Typography sx={{ textAlign: 'center', color: TEAL, fontSize: 12, fontWeight: 700, mt: 2 }}>−15　　▶ Reproducir　　+15　　1×</Typography>
+    </ExampleFrame>
   )
 }

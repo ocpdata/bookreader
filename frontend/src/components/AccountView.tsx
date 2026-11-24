@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -12,7 +13,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
+import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getMobileConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
 import { formatBytes } from '../format'
 
@@ -233,6 +234,69 @@ function UsageSection() {
 const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : 'nunca'
 
+function MobileAppsSection() {
+  const { user } = useAuth()
+  const [config, setConfig] = useState<Awaited<ReturnType<typeof getMobileConfig>> | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    getMobileConfig()
+      .then((result) => { if (active) setConfig(result) })
+      .catch((e: Error) => { if (active) setError(e.message) })
+    return () => { active = false }
+  }, [])
+
+  return (
+    <Stack spacing={1.5} component="section">
+      <Typography variant="h6" component="h2">Escuchar en el móvil</Typography>
+      {error && <Alert severity="error">No se pudo consultar la compatibilidad móvil: {error}</Alert>}
+      {!config && !error && <Typography color="text.secondary">Consultando compatibilidad móvil…</Typography>}
+      {config && !config.enabled && <Alert severity="info">La compatibilidad con aplicaciones móviles está desactivada.</Alert>}
+      {config?.enabled && (
+        <>
+          <Typography variant="body2" color="text.secondary">
+            Conecta una aplicación de terceros compatible con Audiobookshelf para escuchar tu biblioteca.
+            La disponibilidad y las funciones pueden variar según la app y la región.
+          </Typography>
+          <Typography variant="subtitle2">Absorb · Android y iPhone</Typography>
+          <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+            <Button component="a" href="https://play.google.com/store/apps/details?id=com.barnabas.absorb" target="_blank" rel="noopener noreferrer" size="small" variant="outlined">Google Play</Button>
+            <Button component="a" href="https://apps.apple.com/app/absorb-for-audiobookshelf/id6760673498" target="_blank" rel="noopener noreferrer" size="small" variant="outlined">App Store</Button>
+          </Stack>
+          <Typography variant="subtitle2">AudioBooth · iPhone</Typography>
+          <Button component="a" href="https://apps.apple.com/app/audiobooth-audiobooks-player/id6753017503" target="_blank" rel="noopener noreferrer" size="small" variant="outlined" sx={{ alignSelf: 'flex-start' }}>App Store</Button>
+          {config.serverUrl ? (
+            <>
+              <Typography variant="subtitle2">Cómo conectarte</Typography>
+              <Box component="ol" sx={{ pl: 2.5, my: 0 }}>
+                <Typography component="li" variant="body2">Instala y abre la app; elige conectar un servidor de Audiobookshelf.</Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  En servidor, introduce <strong>{config.serverUrl}</strong>.
+                </Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  Inicia sesión con tu correo de BookBrief{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} y tu contraseña de BookBrief.
+                </Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1 }}>Abre la biblioteca «Resúmenes» para escuchar tus audios.</Typography>
+              </Box>
+            </>
+          ) : (
+            <Alert severity="warning">No hay una dirección HTTPS para móviles configurada. Contacta al administrador del servicio.</Alert>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            Puedes sincronizar tu progreso y, si la app lo permite, descargar audios. Para subir, editar o eliminar contenido,
+            usa BookBrief en la web. Algunas funciones de las apps no están disponibles en BookBrief.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Administra el acceso en «Apps vinculadas». Al quitar una app se revoca su acceso al servidor, pero sus descargas
+            pueden permanecer en el dispositivo.
+          </Typography>
+        </>
+      )}
+    </Stack>
+  )
+}
+
 /** Apps vinculadas (Absorb, AudioBooth...): cada inicio de sesión desde una app crea un dispositivo que se puede revocar. */
 function DevicesSection() {
   const [devices, setDevices] = useState<LinkedDevice[] | null>(null)
@@ -267,8 +331,8 @@ function DevicesSection() {
         Apps vinculadas
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Cada app compatible con Audiobookshelf que inicia sesión queda aquí. Si pierdes un dispositivo, quítalo: dejará de
-        tener acceso de inmediato.
+        Cada app compatible con Audiobookshelf que inicia sesión queda aquí. Si pierdes un dispositivo, quítalo para revocar
+        su acceso al servidor. Los audios ya descargados pueden permanecer en él.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {devices?.length === 0 && <Typography color="text.secondary">No hay apps vinculadas.</Typography>}
@@ -372,6 +436,8 @@ export default function AccountView() {
       </form>
       <Divider />
       <UsageSection />
+      <Divider />
+      <MobileAppsSection />
       <Divider />
       <DevicesSection />
       <Divider />
