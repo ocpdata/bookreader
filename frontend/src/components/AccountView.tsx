@@ -66,7 +66,7 @@ function DeleteAccountSection() {
           <DialogTitle id="delete-account-title">¿Eliminar tu cuenta?</DialogTitle>
           <DialogContent>
             <DialogContentText sx={{ mb: 2 }}>
-              Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones y apps vinculadas. Las copias técnicas de los
+              Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones web y de apps. Las copias técnicas de los
               archivos pueden tardar hasta 14 días en desaparecer. Escribe tu contraseña para confirmar.
             </DialogContentText>
             <TextField
@@ -232,7 +232,7 @@ function UsageSection() {
 }
 
 const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : 'nunca'
+  iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'medium' }) : 'nunca'
 
 function MobileAppsSection() {
   const { user } = useAuth()
@@ -288,8 +288,8 @@ function MobileAppsSection() {
             usa BookBrief en la web. Algunas funciones de las apps no están disponibles en BookBrief.
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Administra el acceso en «Apps vinculadas». Al quitar una app se revoca su acceso al servidor, pero sus descargas
-            pueden permanecer en el dispositivo.
+            Administra el acceso en «Sesiones de apps». Al cerrar una sesión se revoca su acceso al servidor, pero sus
+            descargas pueden permanecer en el dispositivo.
           </Typography>
         </>
       )}
@@ -297,8 +297,7 @@ function MobileAppsSection() {
   )
 }
 
-/** Apps vinculadas (Absorb, AudioBooth...): cada inicio de sesión desde una app crea un dispositivo que se puede revocar. */
-function DevicesSection() {
+function AppSessionsSection() {
   const [devices, setDevices] = useState<LinkedDevice[] | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -326,32 +325,40 @@ function DevicesSection() {
   }
 
   return (
-    <Stack spacing={1.5}>
+    <Stack spacing={1.5} component="section">
       <Typography variant="h6" component="h2">
-        Apps vinculadas
+        Sesiones de apps
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Cada app compatible con Audiobookshelf que inicia sesión queda aquí. Si pierdes un dispositivo, quítalo para revocar
-        su acceso al servidor. Los audios ya descargados pueden permanecer en él.
+        Cada inicio de sesión crea una entrada: una misma app o dispositivo puede aparecer varias veces. El nombre lo
+        proporciona la app y no identifica necesariamente un dispositivo único.
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        El último uso se actualiza como máximo una vez por hora y no indica si la app está conectada ahora.
+        Al cerrar una sesión se revoca su acceso al servidor; sus audios descargados pueden permanecer en el dispositivo.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
-      {devices?.length === 0 && <Typography color="text.secondary">No hay apps vinculadas.</Typography>}
+      {devices?.length === 0 && <Typography color="text.secondary">No hay sesiones de apps.</Typography>}
       {devices?.map((d) => (
         <Stack key={d.id} direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <Typography>{d.name}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Vinculada {formatDate(d.createdAt)} · último uso {formatDate(d.lastUsedAt)}
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ overflowWrap: 'anywhere' }}>{d.name}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              Inicio: {formatDate(d.createdAt)} · último uso registrado: {formatDate(d.lastUsedAt)}
             </Typography>
-          </div>
-          <Button color="error" size="small" disabled={busy} onClick={() => run(() => revokeDevice(d.id))}>
-            Quitar
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+              ID de sesión: {d.id}
+            </Typography>
+          </Box>
+          <Button color="error" size="small" disabled={busy} onClick={() => run(() => revokeDevice(d.id))}
+            aria-label={`Cerrar sesión de ${d.name}, ID ${d.id}`}>
+            Cerrar sesión
           </Button>
         </Stack>
       ))}
       {devices && devices.length > 1 && (
         <Button color="error" size="small" disabled={busy} onClick={() => run(revokeAllDevices)} sx={{ alignSelf: 'flex-start' }}>
-          Quitar todas
+          Cerrar todas las sesiones de apps
         </Button>
       )}
     </Stack>
@@ -439,7 +446,7 @@ export default function AccountView() {
       <Divider />
       <MobileAppsSection />
       <Divider />
-      <DevicesSection />
+      <AppSessionsSection />
       <Divider />
       <DeleteAccountSection />
     </Stack>
