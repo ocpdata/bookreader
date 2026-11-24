@@ -117,6 +117,25 @@ describe('Registro, verificación y recuperación (e2e)', () => {
   });
 
   describe('registro y verificación', () => {
+    it('conserva el contexto de la invitación en el registro y los reenvíos sin aceptar destinos arbitrarios', async () => {
+      const email = newEmail();
+      await register({ email, source: 'share' }).expect(202);
+      expect(sentTo(email)[0].text).toContain('&from=share');
+      app.get(SlidingWindowLimiter).clear();
+      await api().post('/api/auth/resend-verification').send({ email, source: 'share' }).expect(202);
+      expect(sentTo(email)[1].text).toContain('&from=share');
+      app.get(SlidingWindowLimiter).clear();
+      await register({ email, source: 'share' }).expect(202);
+      expect(sentTo(email)[2].text).toContain('&from=share');
+      await api().post('/api/auth/verify-email').send({ token: tokenIn(sentTo(email)[2]) }).expect(200);
+      app.get(SlidingWindowLimiter).clear();
+      await register({ email, source: 'share' }).expect(202);
+      expect(sentTo(email)[3].text).toContain('/entrar?from=share');
+      app.get(SlidingWindowLimiter).clear();
+      await register({ email: newEmail(), source: 'https://other.example' }).expect(400);
+      await api().post('/api/auth/resend-verification').send({ email, source: 'https://other.example' }).expect(400);
+    });
+
     it('crea la cuenta pendiente, envía el enlace y solo permite entrar tras verificarla', async () => {
       const email = newEmail();
       const res = await register({ email: email.toUpperCase(), name: '  Ana   María ' });

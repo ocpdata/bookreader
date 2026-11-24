@@ -3,12 +3,13 @@
 const escape = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-function layout(heading: string, paragraphs: string[], action?: { label: string; url: string }, footer?: string) {
+function layout(heading: string, paragraphs: string[], action?: { label: string; url: string }, footer?: string, extraAction?: { label: string; url: string }) {
   const body = paragraphs.map((p) => `<p style="margin:0 0 16px">${escape(p)}</p>`).join('');
-  const button = action
-    ? `<p style="margin:24px 0"><a href="${escape(action.url)}" style="background:#1565c0;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block">${escape(action.label)}</a></p>
-<p style="margin:0 0 16px;color:#555;font-size:13px">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escape(action.url)}</span></p>`
-    : '';
+  const actions = [action, extraAction].filter((item): item is { label: string; url: string } => !!item);
+  const button = actions.map((item) =>
+    `<p style="margin:24px 0"><a href="${escape(item.url)}" style="background:#1565c0;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block">${escape(item.label)}</a></p>
+<p style="margin:0 0 16px;color:#555;font-size:13px">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all">${escape(item.url)}</span></p>`
+  ).join('');
   const small = footer ? `<p style="margin:24px 0 0;color:#777;font-size:12px">${escape(footer)}</p>` : '';
   return `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:15px;color:#222;max-width:520px;margin:0 auto;padding:24px">
 <h1 style="font-size:20px;margin:0 0 16px">${escape(heading)}</h1>${body}${button}${small}</div>`;
@@ -18,15 +19,17 @@ const text = (lines: (string | undefined)[]) => lines.filter((l) => l !== undefi
 
 export function shareInvitationMessage(ownerName: string, scope: 'LIBRARY' | 'ITEMS', url: string) {
   const description = scope === 'LIBRARY' ? 'su biblioteca de audios, incluidos los que añada después' : 'una selección fija de sus audios';
+  const loginUrl = new URL('/entrar?from=share', url).toString();
+  const registerUrl = new URL('/registro?from=share', url).toString();
   const paragraphs = [
     `${ownerName} quiere compartir contigo ${description} en BookBrief.`,
-    'Para ver la invitación, inicia sesión con este correo verificado. Si aún no tienes cuenta, créala y verifica este correo primero.',
+    'Usa el mismo correo al que llegó esta invitación. Si aún no tienes cuenta, crea una y verifica tu correo primero. La primera prueba gratuita dura 30 días desde la verificación.',
     'Tienes 7 días para aceptar o rechazar. No tendrás acceso a los audios hasta aceptar; el propietario puede revocar el acceso.',
   ];
   return {
     subject: 'Invitación para compartir audios en BookBrief',
-    text: text([...paragraphs, '', url, '', 'Si no esperabas esta invitación, puedes ignorarla.']),
-    html: layout('Te invitaron a escuchar', paragraphs, { label: 'Ver invitaciones', url }, 'Si no esperabas esta invitación, puedes ignorarla.'),
+    text: text([...paragraphs, '', `Ya tengo cuenta: ${loginUrl}`, `Crear cuenta de prueba: ${registerUrl}`, '', 'Si no esperabas esta invitación, puedes ignorarla.']),
+    html: layout('Te invitaron a escuchar', paragraphs, { label: 'Ya tengo cuenta', url: loginUrl }, 'Si no esperabas esta invitación, puedes ignorarla.', { label: 'Crear cuenta de prueba', url: registerUrl }),
   };
 }
 

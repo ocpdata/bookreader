@@ -154,14 +154,15 @@ export interface RegisterFields {
   name: string
   password: string
   inviteCode?: string
+  source?: 'share'
   acceptTerms: boolean
 }
 
 export const registerAccount = (fields: RegisterFields) =>
   request<{ message: string }>('/auth/register', { method: 'POST', body: JSON.stringify(fields) })
 
-export const resendVerification = (email: string) =>
-  request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) })
+export const resendVerification = (email: string, source?: 'share') =>
+  request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email, ...(source ? { source } : {}) }) })
 
 export const verifyEmail = (token: string) =>
   request<{ message: string }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) })

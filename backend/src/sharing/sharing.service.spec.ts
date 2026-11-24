@@ -198,12 +198,15 @@ describe('SharingService', () => {
       { id: OWNER },
     ]);
     expect(rows[0].recipientId).toBeNull();
-    expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: 'new@example.test',
-        text: expect.stringContaining('https://books.example.test/compartidos'),
-      }),
-    );
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'new@example.test',
+      text: expect.stringContaining('https://books.example.test/entrar?from=share'),
+      html: expect.stringContaining('Crear cuenta de prueba'),
+    }));
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining('https://books.example.test/registro?from=share'),
+      html: expect.stringContaining('Ya tengo cuenta'),
+    }));
     expect(JSON.stringify(send.mock.calls)).not.toMatch(
       /token=|secret|private|share-1/,
     );

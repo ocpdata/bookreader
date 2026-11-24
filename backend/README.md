@@ -64,7 +64,9 @@ conservando el id y la selección. Revalida disponibilidad de la selección y ev
 vigente idéntico. Durante la entrega no puede aceptarse; un fallo restaura plazo/entrega anteriores
 sin deshacer una revocación concurrente. Crear con fallo de entrega revoca lo no entregado.
 Ambos devuelven 503 y registran el fallo sin direcciones ni contenido del proveedor.
-El correo enlaza únicamente al origen configurado + `/compartidos`, sin tokens ni ids:
+El correo enlaza al origen configurado + `/entrar?from=share` o `/registro?from=share`, sin tokens ni ids.
+El registro conserva ese contexto en el correo de verificación y regresa a `/invitaciones` después de iniciar sesión;
+la cuenta debe usar el mismo correo y aceptar explícitamente. Los enlaces anteriores a `/compartidos` siguen funcionando.
 `APP_PUBLIC_URL` debe ser HTTPS explícito en producción, sin credenciales.
 
 `readableWhere(userId): Promise<Prisma.SummaryWhereInput>` devuelve owned OR permisos aceptados

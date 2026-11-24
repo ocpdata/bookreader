@@ -131,6 +131,9 @@ describe('Acceso a audios compartidos (e2e)', () => {
       });
     expect(created.status).toBeLessThan(300);
     expect(outbox.some((message) => message.to === recipientEmail)).toBe(true);
+    const invitationMail = outbox.find((message) => message.to === recipientEmail)!;
+    expect(invitationMail.text).toContain('/entrar?from=share');
+    expect(invitationMail.text).toContain('/registro?from=share');
 
     const sent = await api()
       .get('/api/shares/sent')
@@ -152,6 +155,7 @@ describe('Acceso a audios compartidos (e2e)', () => {
         email: recipientEmail,
         password: 'una-contraseña-segura-1',
         acceptTerms: true,
+        source: 'share',
       })
       .expect(202);
     const pending = await prisma.user.findUniqueOrThrow({
@@ -174,6 +178,7 @@ describe('Acceso a audios compartidos (e2e)', () => {
     );
     const token = /token=([A-Za-z0-9_-]+)/.exec(verification?.text ?? '')?.[1];
     expect(token).toBeDefined();
+    expect(verification?.text).toContain('&from=share');
     await api().post('/api/auth/verify-email').send({ token }).expect(200);
     const verified = await prisma.user.findUniqueOrThrow({
       where: { id: recipientId },

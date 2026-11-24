@@ -184,7 +184,7 @@ export class SharingService implements OnModuleInit, OnModuleDestroy {
       ) {
         throw new Error('Origen inseguro');
       }
-      return new URL('/compartidos', base.origin).toString();
+      return new URL('/invitaciones', base.origin).toString();
     } catch {
       this.logger.error(
         'APP_PUBLIC_URL no es un origen seguro para las invitaciones',

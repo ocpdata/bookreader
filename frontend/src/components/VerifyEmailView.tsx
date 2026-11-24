@@ -10,6 +10,7 @@ import AuthCard from './AuthCard'
 export default function VerifyEmailView() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
+  const source = params.get('from') === 'share'
   const [state, setState] = useState<'working' | 'ok' | 'error'>(token ? 'working' : 'error')
   const [message, setMessage] = useState(token ? '' : 'El enlace no es válido.')
   // StrictMode ejecuta el efecto dos veces en desarrollo; el enlace es de un solo uso.
@@ -35,12 +36,12 @@ export default function VerifyEmailView() {
       {state === 'ok' && <Alert severity="success">{message}</Alert>}
       {state === 'error' && <Alert severity="error">{message}</Alert>}
       {state === 'ok' && (
-        <Button component={RouterLink} to="/entrar" variant="contained">
+        <Button component={RouterLink} to={source ? '/entrar?from=share' : '/entrar'} variant="contained">
           Iniciar sesión
         </Button>
       )}
       {state === 'error' && (
-        <Button component={RouterLink} to="/registro" variant="outlined">
+        <Button component={RouterLink} to={source ? '/registro?from=share' : '/registro'} variant="outlined">
           Pedir otro enlace
         </Button>
       )}

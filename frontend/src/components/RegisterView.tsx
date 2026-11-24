@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link as RouterLink, Navigate } from 'react-router-dom'
+import { Link as RouterLink, Navigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -16,7 +16,11 @@ const MIN_LENGTH = 12
 
 export default function RegisterView() {
   const { user } = useAuth()
-  const [mode, setMode] = useState<RegistrationMode | undefined>(undefined)
+  const [params] = useSearchParams()
+  const source = params.get('from') === 'share' ? 'share' : undefined
+  const loginPath = source ? '/entrar?from=share' : '/entrar'
+  const [mode, setMode] = useState<RegistrationMode | 'error' | undefined>(undefined)
+  const [configAttempt, setConfigAttempt] = useState(0)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,16 +35,25 @@ export default function RegisterView() {
   useEffect(() => {
     getAuthConfig()
       .then((config) => setMode(config.registration))
-      .catch(() => setMode('closed'))
-  }, [])
+      .catch(() => setMode('error'))
+  }, [configAttempt])
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={source ? '/invitaciones' : '/'} replace />
   if (mode === undefined) return <CircularProgress size={28} sx={{ display: 'block', mx: 'auto', mt: 4 }} />
+  if (mode === 'error') {
+    return (
+      <AuthCard title="Crear cuenta">
+        <Alert severity="error">No se pudo comprobar si el registro está disponible.</Alert>
+        <Button onClick={() => { setMode(undefined); setConfigAttempt((attempt) => attempt + 1) }}>Reintentar</Button>
+        <Link component={RouterLink} to={loginPath}>Ya tengo una cuenta</Link>
+      </AuthCard>
+    )
+  }
   if (mode === 'closed') {
     return (
       <AuthCard title="Crear cuenta">
         <Alert severity="info">El registro no está disponible por ahora.</Alert>
-        <Link component={RouterLink} to="/entrar">
+        <Link component={RouterLink} to={loginPath}>
           Ya tengo una cuenta
         </Link>
       </AuthCard>
@@ -55,7 +68,7 @@ export default function RegisterView() {
     if (!accepted) return setError('Debes aceptar los términos y el aviso de privacidad')
     setBusy(true)
     try {
-      const res = await registerAccount({ email, name, password, acceptTerms: true, ...(mode === 'invite' ? { inviteCode } : {}) })
+      const res = await registerAccount({ email, name, password, acceptTerms: true, ...(mode === 'invite' ? { inviteCode } : {}), ...(source ? { source } : {}) })
       setSent(res.message)
     } catch (err) {
       setError((err as Error).message)
@@ -75,12 +88,12 @@ export default function RegisterView() {
         <Button
           size="small"
           sx={{ alignSelf: 'flex-start' }}
-          onClick={() => resendVerification(email).then(() => setResent(true), (err: Error) => setError(err.message))}
+          onClick={() => resendVerification(email, source).then(() => setResent(true), (err: Error) => setError(err.message))}
         >
           Reenviar el correo
         </Button>
         {error && <Alert severity="error">{error}</Alert>}
-        <Link component={RouterLink} to="/entrar">
+        <Link component={RouterLink} to={loginPath}>
           Ir a iniciar sesión
         </Link>
       </AuthCard>
@@ -89,6 +102,7 @@ export default function RegisterView() {
 
   return (
     <AuthCard title="Crear cuenta">
+      {source && <Alert severity="info">Regístrate con el mismo correo que recibió la invitación. Después de verificarlo e iniciar sesión podrás aceptarla.</Alert>}
       <form onSubmit={handleSubmit}>
         <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required fullWidth autoFocus sx={{ mb: 2 }} />
         <TextField label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required fullWidth sx={{ mb: 2 }} />
@@ -148,7 +162,7 @@ export default function RegisterView() {
           Crear cuenta
         </Button>
       </form>
-      <Link component={RouterLink} to="/entrar" variant="body2">
+      <Link component={RouterLink} to={loginPath} variant="body2">
         Ya tengo una cuenta
       </Link>
     </AuthCard>

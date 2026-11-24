@@ -39,6 +39,18 @@ test('shares the library or selected audios using the existing JSON request cont
   ])
 })
 
+test('preserves the sharing context when registering and resending verification', async () => {
+  const requests = []
+  globalThis.fetch = async (path, init) => {
+    requests.push({ path, body: JSON.parse(init.body) })
+    return Response.json({ message: 'ok' }, { status: 202 })
+  }
+  await api.registerAccount({ email: 'reader@example.test', name: 'Lector', password: 'password', acceptTerms: true, source: 'share' })
+  await api.resendVerification('reader@example.test', 'share')
+  await api.resendVerification('reader@example.test')
+  assert.deepEqual(requests.map(({ body }) => body.source), ['share', 'share', undefined])
+})
+
 test('reads backend availability and encodes invitation IDs for actions with empty responses', async () => {
   const requests = []
   globalThis.fetch = async (path, init) => {

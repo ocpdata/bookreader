@@ -15,18 +15,21 @@ export default function LoginView() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from ?? '/'
+  const shareLink = new URLSearchParams(location.search).get('from') === 'share'
+  const from = shareLink ? '/invitaciones' : (location.state as { from?: string } | null)?.from ?? '/'
+  const shareRegistration = shareLink || from === '/invitaciones' || from === '/compartidos'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [registration, setRegistration] = useState<RegistrationMode>('closed')
+  const [configError, setConfigError] = useState(false)
 
   useEffect(() => {
     getAuthConfig()
       .then((config) => setRegistration(config.registration))
-      .catch(() => undefined)
+      .catch(() => setConfigError(true))
   }, [])
 
   if (user) return <Navigate to={from} replace />
@@ -53,6 +56,9 @@ export default function LoginView() {
             <Typography variant="h5" component="h1">
               Iniciar sesión
             </Typography>
+            {shareRegistration && (
+              <Alert severity="info">Usa el mismo correo que recibió la invitación.</Alert>
+            )}
             <TextField
               label="Correo"
               type="email"
@@ -71,6 +77,7 @@ export default function LoginView() {
               required
             />
             {error && <Alert severity="error">{error}</Alert>}
+            {configError && <Alert severity="error">No se pudo comprobar si el registro está disponible. Recarga la página para intentarlo de nuevo.</Alert>}
             <Button type="submit" variant="contained" disabled={busy}>
               Entrar
             </Button>
@@ -80,8 +87,8 @@ export default function LoginView() {
             {registration !== 'closed' && (
               <Typography variant="body2">
                 ¿No tienes cuenta?{' '}
-                <Link component={RouterLink} to="/registro">
-                  Crear cuenta
+                <Link component={RouterLink} to={shareRegistration ? '/registro?from=share' : '/registro'}>
+                  {shareRegistration ? 'Crear cuenta de prueba' : 'Crear cuenta'}
                 </Link>
               </Typography>
             )}

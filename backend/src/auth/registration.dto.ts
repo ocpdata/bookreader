@@ -26,6 +26,10 @@ export class RegisterDto {
   @MaxLength(64)
   inviteCode?: string;
 
+  @IsOptional()
+  @Equals('share')
+  source?: 'share';
+
   @IsBoolean()
   @Equals(true, { message: 'Debes aceptar los términos y el aviso de privacidad' })
   acceptTerms!: boolean;
@@ -36,6 +40,12 @@ export class EmailDto {
   @IsEmail()
   @MaxLength(255)
   email!: string;
+}
+
+export class VerificationEmailDto extends EmailDto {
+  @IsOptional()
+  @Equals('share')
+  source?: 'share';
 }
 
 export class TokenDto {

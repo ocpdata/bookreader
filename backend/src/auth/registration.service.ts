@@ -81,9 +81,9 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async sendVerification(user: Pick<User, 'id' | 'name' | 'email'>) {
+  private async sendVerification(user: Pick<User, 'id' | 'name' | 'email'>, source?: 'share') {
     const token = await this.tokens.create(user.id, 'VERIFY_EMAIL');
-    await this.safeSend(verifyEmailMessage(user.name, appUrl(`/verificar?token=${token}`)), user.email!);
+    await this.safeSend(verifyEmailMessage(user.name, appUrl(`/verificar?token=${token}${source === 'share' ? '&from=share' : ''}`)), user.email!);
   }
 
   async register(dto: RegisterDto, ip: string) {
@@ -94,7 +94,7 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     const invitation = registrationMode() === 'invite' ? await this.invitations.validate(dto.inviteCode, dto.email) : null;
 
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (existing) return this.notifyExisting(existing);
+    if (existing) return this.notifyExisting(existing, dto.source);
 
     const passwordHash = await this.passwords.hash(dto.password);
     let user: User;
@@ -116,11 +116,11 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
       // Otra petición creó la cuenta a la vez: se trata como una cuenta existente.
       if ((error as { code?: string }).code === 'P2002') {
         const raced = await this.prisma.user.findUnique({ where: { email: dto.email } });
-        if (raced) return this.notifyExisting(raced);
+        if (raced) return this.notifyExisting(raced, dto.source);
       }
       throw error;
     }
-    if (this.mayMail(dto.email)) await this.sendVerification(user);
+    if (this.mayMail(dto.email)) await this.sendVerification(user, dto.source);
   }
 
   /**
@@ -128,16 +128,16 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
    * el enlace de verificación. La contraseña de una cuenta pendiente nunca se pisa: si no, quien se adelante a
    * una persona podría quedarse con la cuenta que ella verifica.
    */
-  private async notifyExisting(user: User) {
+  private async notifyExisting(user: User, source?: 'share') {
     if (!user.email || user.status === UserStatus.SUSPENDED || !this.mayMail(user.email)) return;
-    if (user.status === UserStatus.PENDING) return this.sendVerification(user);
-    await this.safeSend(accountExistsMessage(user.name, appUrl('/entrar'), appUrl('/olvide')), user.email);
+    if (user.status === UserStatus.PENDING) return this.sendVerification(user, source);
+    await this.safeSend(accountExistsMessage(user.name, appUrl(source === 'share' ? '/entrar?from=share' : '/entrar'), appUrl('/olvide')), user.email);
   }
 
-  async resendVerification(email: string, ip: string) {
+  async resendVerification(email: string, ip: string, source?: 'share') {
     this.limitIp('resend', ip, MAX_REQUESTS_PER_IP_PER_HOUR);
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (user?.status === UserStatus.PENDING && this.mayMail(email)) await this.sendVerification(user);
+    if (user?.status === UserStatus.PENDING && this.mayMail(email)) await this.sendVerification(user, source);
   }
 
   async verifyEmail(token: string) {

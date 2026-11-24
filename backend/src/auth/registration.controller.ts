@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { Public } from './public.decorator';
 import { registrationMode } from './registration.config';
-import { EmailDto, RegisterDto, ResetPasswordDto, TokenDto } from './registration.dto';
+import { EmailDto, RegisterDto, ResetPasswordDto, TokenDto, VerificationEmailDto } from './registration.dto';
 import { RegistrationService } from './registration.service';
 
 const GENERIC = {
@@ -33,8 +33,8 @@ export class RegistrationController {
   @Public()
   @Post('resend-verification')
   @HttpCode(202)
-  async resend(@Body() dto: EmailDto, @Req() req: Request) {
-    await this.registration.resendVerification(dto.email, req.ip ?? 'desconocida');
+  async resend(@Body() dto: VerificationEmailDto, @Req() req: Request) {
+    await this.registration.resendVerification(dto.email, req.ip ?? 'desconocida', dto.source);
     return { message: GENERIC.link };
   }
 

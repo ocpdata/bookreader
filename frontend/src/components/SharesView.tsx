@@ -235,7 +235,7 @@ export default function SharesView() {
       {loading && <CircularProgress size={28} />}
       <Stack spacing={1}>
         <Typography variant="h6" component="h2">Invitaciones recibidas</Typography>
-        {!loading && receivedLoaded && !received.length && <Typography color="text.secondary">No hay invitaciones recibidas.</Typography>}
+        {!loading && receivedLoaded && !received.length && <Typography color="text.secondary">No hay invitaciones recibidas. Si esperas una, comprueba que iniciaste sesión con el correo al que fue enviada.</Typography>}
         {received.map((share) => invitation(share, true))}
       </Stack>
       <Stack spacing={1}>
