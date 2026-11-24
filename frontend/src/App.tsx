@@ -13,6 +13,7 @@ import { createCategory, deleteCategory, listCategories, type CurrentUser } from
 import { useAuth } from './auth'
 import AccountView from './components/AccountView'
 import AdminUsersView from './components/AdminUsersView'
+import ResourcesView from './components/ResourcesView'
 import BatchUploadView from './components/BatchUploadView'
 import ForgotPasswordView from './components/ForgotPasswordView'
 import HomeView from './components/HomeView'
@@ -165,6 +166,7 @@ export default function App() {
           <Route path="/estadisticas" element={<RequireAuth><StatisticsView /></RequireAuth>} />
           <Route path="/administracion" element={<RequireAuth><AdminUsersView /></RequireAuth>} />
           <Route path="/administracion/estadisticas" element={<RequireAuth><StatisticsView admin /></RequireAuth>} />
+          <Route path="/administracion/recursos" element={<RequireAuth><ResourcesView /></RequireAuth>} />
           <Route path="/administracion/usuarios/:id/estadisticas" element={<RequireAuth><StatisticsView admin /></RequireAuth>} />
           <Route path="/audios/nuevo" element={<RequireAuth><SummaryForm categories={categories} categoriesReady={categoriesReady} onCreateCategory={addCategory} onDeleteCategory={removeCategory} /></RequireAuth>} />
           <Route path="/audios/lote" element={<RequireAuth><BatchUploadView categories={categories} /></RequireAuth>} />

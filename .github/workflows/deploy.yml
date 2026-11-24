@@ -108,6 +108,10 @@ jobs:
             fi
             echo "$(echo "$out" | tr a-z A-Z)=${value}" >> "$GITHUB_ENV"
           done
+          for out in instance_id db_instance_id; do
+            value="$(terraform output -raw "$out" 2>/dev/null || true)"
+            echo "$(echo "$out" | tr a-z A-Z)=${value}" >> "$GITHUB_ENV"
+          done
 
       - name: Render API environment file
         run: |
@@ -124,6 +128,8 @@ jobs:
             echo "DATABASE_URL=\"${database_url}\""
             echo "AWS_REGION=${AWS_REGION}"
             echo "S3_BUCKET=${S3_BUCKET}"
+            echo "MONITORING_INSTANCE_ID=${INSTANCE_ID}"
+            echo "MONITORING_DB_INSTANCE_ID=${DB_INSTANCE_ID}"
             echo "PORT=3000"
             # Correo transaccional (SES). El remitente debe coincidir con mail_from_local_part de infra (no-responder).
             echo "MAIL_DRIVER=ses"

@@ -75,6 +75,7 @@ export default function AdminUsersView() {
     <Stack spacing={2} sx={{ maxWidth: 700 }}>
       <Typography variant="h5" component="h1">Administración de usuarios</Typography>
       <Button component={RouterLink} to="/administracion/estadisticas" sx={{ alignSelf: 'flex-start' }}>Estadísticas generales</Button>
+      <Button component={RouterLink} to="/administracion/recursos" sx={{ alignSelf: 'flex-start' }}>Recursos del servidor</Button>
       <Typography color="text.secondary">
         Solo el propietario puede otorgar o retirar el rol de administrador.
       </Typography>

@@ -8,6 +8,12 @@ exec > >(tee -a /var/log/bookreader-bootstrap.log) 2>&1
 apt-get update -y
 apt-get install -y nginx curl ca-certificates gnupg mysql-client
 
+# Systems Manager permite configurar el monitoreo sin acceso SSH permanente.
+if ! snap list amazon-ssm-agent >/dev/null 2>&1; then
+  snap install amazon-ssm-agent --classic
+fi
+snap start --enable amazon-ssm-agent
+
 # Node.js 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs

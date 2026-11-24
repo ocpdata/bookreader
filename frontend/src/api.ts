@@ -92,6 +92,16 @@ export const changeUserRole = (id: string, role: AdminUser['role'], password: st
 
 export type StatisticsPeriod = 'today' | 'week' | 'month'
 
+export interface ResourceMetrics {
+  generatedAt: string
+  start: string
+  end: string
+  metrics: Record<string, { value: number | null; timestamp: string | null; points: { timestamp: string; value: number }[] }>
+}
+
+export const getResourceMetrics = (period: StatisticsPeriod) =>
+  request<ResourceMetrics>(`/statistics/admin/resources?period=${period}`)
+
 export interface PersonalStatistics {
   saved: number
   inProgress: number

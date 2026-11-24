@@ -11,6 +11,7 @@ import {
 import { IsInt, IsUUID, Max, Min } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { StatisticsService } from './statistics.service';
+import { ResourcesService } from './resources.service';
 
 class ListeningEventDto {
   @IsUUID('4')
@@ -27,7 +28,18 @@ class ListeningEventDto {
 
 @Controller('statistics')
 export class StatisticsController {
-  constructor(private readonly statistics: StatisticsService) {}
+  constructor(
+    private readonly statistics: StatisticsService,
+    private readonly resources: ResourcesService,
+  ) {}
+
+  @Get('admin/resources')
+  resourcesOverview(
+    @CurrentUser() userId: string,
+    @Query('period') period?: string,
+  ) {
+    return this.resources.get(userId, period);
+  }
 
   @Post('listening')
   @HttpCode(204)
