@@ -10,12 +10,12 @@ import Link from '@mui/material/Link'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { getAuthConfig, type RegistrationMode } from '../api'
-import { HeroArt, LandingIcon, type LandingIconName } from './LandingArt'
+import { HeroArt, LandingIcon, ProductExample, type LandingIconName } from './LandingArt'
 
-const STEPS: { icon: LandingIconName; title: string; text: string }[] = [
-  { icon: 'upload', title: 'Sube tus audios', text: 'Agrega tus resúmenes en MP3 o M4A, uno por uno o varios a la vez. BookBrief avisa si ya tienes uno igual.' },
-  { icon: 'folder', title: 'Organízalos a tu manera', text: 'Usa carpetas, categorías, etiquetas y favoritos para encontrar cada libro cuando lo necesites.' },
-  { icon: 'play', title: 'Escucha y retoma', text: 'Dale play desde el navegador. Tu posición se guarda sola y vuelves exactamente donde te quedaste.' },
+const STEPS: { type: 'upload' | 'library' | 'listen'; icon: LandingIconName; title: string; text: string }[] = [
+  { type: 'upload', icon: 'upload', title: 'Sube tus audios', text: 'Agrega tus propios resúmenes en MP3 o M4A, uno por uno o varios a la vez. BookBrief te avisa si ya tienes uno igual.' },
+  { type: 'library', icon: 'folder', title: 'Organízalos a tu manera', text: 'Encuentra cada audio con búsqueda, carpetas, categorías, etiquetas y favoritos.' },
+  { type: 'listen', icon: 'play', title: 'Escucha y retoma', text: 'Reproduce desde el navegador, cambia la velocidad y continúa desde la posición guardada.' },
 ]
 
 const FEATURES: { icon: LandingIconName; title: string; text: string }[] = [
@@ -40,9 +40,9 @@ const TRIAL_FAQ = {
   a: 'Al verificar tu correo tienes 30 días de prueba, sin tarjeta y con una prueba por correo. Al terminar puedes seguir escuchando tus audios; para subir nuevos necesitarás suscribirte.',
 }
 
-function Section({ title, subtitle, children, tinted = false }: { title: string; subtitle?: string; children: React.ReactNode; tinted?: boolean }) {
+function Section({ title, subtitle, children, tinted = false, id }: { title: string; subtitle?: string; children: React.ReactNode; tinted?: boolean; id?: string }) {
   return (
-    <Box component="section" sx={{ py: { xs: 6, md: 9 }, bgcolor: tinted ? 'background.paper' : 'transparent' }}>
+    <Box component="section" id={id} sx={{ py: { xs: 6, md: 9 }, bgcolor: tinted ? 'background.paper' : 'transparent' }}>
       <Container maxWidth="lg">
         <Stack spacing={1.5} sx={{ textAlign: 'center', maxWidth: 640, mx: 'auto', mb: { xs: 4, md: 6 } }}>
           <Typography variant="h4" component="h2" sx={{ fontWeight: 800, letterSpacing: '-0.03em' }}>
@@ -79,6 +79,7 @@ export default function LandingView() {
       <Button component={RouterLink} to="/entrar" variant={canRegister ? 'outlined' : 'contained'} size="large">
         Entrar
       </Button>
+      <Button href="#como-funciona" size="large">Ver cómo funciona</Button>
     </Stack>
   )
 
@@ -92,10 +93,10 @@ export default function LandingView() {
                 Tu biblioteca personal de audio
               </Typography>
               <Typography variant="h2" component="h1" sx={{ fontWeight: 800, letterSpacing: '-0.04em', fontSize: { xs: '2.25rem', md: '3.25rem' }, lineHeight: 1.1 }}>
-                Tus resúmenes de libros, siempre donde los dejaste
+                Tus audios, organizados y listos para escuchar
               </Typography>
               <Typography variant="h6" component="p" color="text.secondary" sx={{ fontWeight: 400, letterSpacing: 0, lineHeight: 1.5 }}>
-                Sube tus audios, organízalos en una biblioteca privada y retoma la escucha en cualquier momento, desde tu navegador.
+                Sube tus propios resúmenes, crea tu biblioteca privada y continúa donde te quedaste.
               </Typography>
               {actions}
               {canRegister && (
@@ -103,24 +104,31 @@ export default function LandingView() {
                   30 días de prueba, sin tarjeta.
                 </Typography>
               )}
+              <Typography variant="body2" color="text.secondary">
+                BookBrief no incluye resúmenes: tú aportas los audios que tienes derecho a usar.
+              </Typography>
             </Stack>
             <HeroArt />
           </Box>
         </Container>
       </Box>
 
-      <Section title="Tres pasos y a escuchar" subtitle="Menos tiempo buscando archivos, más tiempo aprendiendo.">
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 4 }}>
+      <Section id="como-funciona" title="Así funciona BookBrief" subtitle="De tus archivos a una biblioteca lista para escuchar.">
+        <Stack spacing={{ xs: 6, md: 8 }}>
           {STEPS.map((step, index) => (
-            <Stack key={step.title} spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center' }}>
-              <LandingIcon name={step.icon} size={64} />
-              <Typography variant="h6" component="h3">
-                {index + 1}. {step.title}
-              </Typography>
-              <Typography color="text.secondary">{step.text}</Typography>
-            </Stack>
+            <Box key={step.title} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: { xs: 3, md: 6 }, alignItems: 'center' }}>
+              <Stack spacing={1.5} sx={{ order: { md: index % 2 ? 2 : 0 }, maxWidth: 430 }}>
+                <LandingIcon name={step.icon} size={56} />
+                <Typography variant="overline" sx={{ color: 'primary.dark', fontWeight: 700, letterSpacing: '.1em' }}>Paso {index + 1}</Typography>
+                <Typography variant="h5" component="h3">{step.title}</Typography>
+                <Typography color="text.secondary">{step.text}</Typography>
+              </Stack>
+              <Box sx={{ order: { md: index % 2 ? 1 : 0 } }}>
+                <ProductExample type={step.type} />
+              </Box>
+            </Box>
           ))}
-        </Box>
+        </Stack>
       </Section>
 
       <Section tinted title="Todo para tu biblioteca de aprendizaje" subtitle="Herramientas sencillas que hacen que escuchar sea un hábito.">
@@ -147,6 +155,18 @@ export default function LandingView() {
           <Typography color="text.secondary" sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
             Tus archivos viven en un almacenamiento privado y se reproducen con enlaces temporales que nadie más puede usar.
             Tus audios, tu progreso y tus estadísticas son de tu cuenta, y puedes eliminarla con todos tus datos cuando quieras.
+          </Typography>
+        </Stack>
+      </Section>
+
+      <Section tinted title="Escucha también en tu móvil" subtitle="Tu biblioteca te acompaña donde prefieras escuchar.">
+        <Stack spacing={1.5} sx={{ maxWidth: 760, mx: 'auto', textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Escucha desde el navegador. Si la compatibilidad con Audiobookshelf está habilitada, también puedes
+            conectar una app como Absorb o AudioBooth y sincronizar tu progreso con BookBrief.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Absorb y AudioBooth son aplicaciones de terceros.
           </Typography>
         </Stack>
       </Section>

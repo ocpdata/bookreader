@@ -31,6 +31,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       TF_TOKEN_app_terraform_io: ${{ secrets.TFC_TOKEN }}
       TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_s3_bucket_name: ${{ vars.S3_BUCKET || 'resumen-book-reader' }}
       TF_VAR_instance_type: ${{ vars.INSTANCE_TYPE }}
       TF_VAR_allowed_cidr_blocks: ${{ vars.ALLOWED_CIDR_BLOCKS }}
       TF_VAR_vpc_cidr: ${{ vars.VPC_CIDR }}
@@ -113,6 +114,43 @@ jobs:
       - name: Terraform apply
         if: ${{ inputs.apply }}
         run: terraform apply -input=false tfplan
+
+      - name: Verify monitoring agent
+        if: ${{ inputs.apply }}
+        run: |
+          instance="$(terraform output -raw instance_id)"
+          document="$(terraform output -raw cloudwatch_agent_document_name)"
+          for attempt in $(seq 1 30); do
+            online="$(aws ssm describe-instance-information --region "$AWS_REGION" \
+              --filters "Key=InstanceIds,Values=$instance" \
+              --query 'InstanceInformationList[0].PingStatus' --output text)"
+            [[ "$online" == "Online" ]] && break
+            echo "Esperando Systems Manager ($attempt/30)..."
+            sleep 10
+          done
+          if [[ "$online" != "Online" ]]; then
+            echo "::error::Terraform se aplicó, pero la VM no está conectada a Systems Manager. Comprueba el agente y su conectividad."
+            exit 1
+          fi
+          command_id="$(aws ssm send-command --region "$AWS_REGION" --instance-ids "$instance" \
+            --document-name "$document" --query 'Command.CommandId' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm list-command-invocations --region "$AWS_REGION" --command-id "$command_id" \
+              --query 'CommandInvocations[0].Status' --output text)"
+            if [[ "$status" == "Success" ]]; then
+              echo "Agente de CloudWatch configurado en $instance."
+              exit 0
+            fi
+            if [[ "$status" == "Failed" || "$status" == "TimedOut" || "$status" == "Cancelled" || "$status" == "Cancelling" ]]; then
+              aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$command_id" --instance-id "$instance" --output json
+              echo "::error::La configuración del agente falló ($status)."
+              exit 1
+            fi
+            echo "Esperando configuración del agente ($attempt/60)..."
+            sleep 10
+          done
+          echo "::error::Terraform se aplicó, pero no se confirmó el comando $command_id. Revisa Systems Manager."
+          exit 1
 
       - name: Outputs
         if: ${{ inputs.apply }}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -12,7 +13,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
+import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getMobileConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
 import { formatBytes } from '../format'
 
@@ -65,7 +66,7 @@ function DeleteAccountSection() {
           <DialogTitle id="delete-account-title">¿Eliminar tu cuenta?</DialogTitle>
           <DialogContent>
             <DialogContentText sx={{ mb: 2 }}>
-              Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones y apps vinculadas. Las copias técnicas de los
+              Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones web y de apps. Las copias técnicas de los
               archivos pueden tardar hasta 14 días en desaparecer. Escribe tu contraseña para confirmar.
             </DialogContentText>
             <TextField
@@ -231,10 +232,72 @@ function UsageSection() {
 }
 
 const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' }) : 'nunca'
+  iso ? new Date(iso).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'medium' }) : 'nunca'
 
-/** Apps vinculadas (Absorb, AudioBooth...): cada inicio de sesión desde una app crea un dispositivo que se puede revocar. */
-function DevicesSection() {
+function MobileAppsSection() {
+  const { user } = useAuth()
+  const [config, setConfig] = useState<Awaited<ReturnType<typeof getMobileConfig>> | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    getMobileConfig()
+      .then((result) => { if (active) setConfig(result) })
+      .catch((e: Error) => { if (active) setError(e.message) })
+    return () => { active = false }
+  }, [])
+
+  return (
+    <Stack spacing={1.5} component="section">
+      <Typography variant="h6" component="h2">Escuchar en el móvil</Typography>
+      {error && <Alert severity="error">No se pudo consultar la compatibilidad móvil: {error}</Alert>}
+      {!config && !error && <Typography color="text.secondary">Consultando compatibilidad móvil…</Typography>}
+      {config && !config.enabled && <Alert severity="info">La compatibilidad con aplicaciones móviles está desactivada.</Alert>}
+      {config?.enabled && (
+        <>
+          <Typography variant="body2" color="text.secondary">
+            Conecta una aplicación de terceros compatible con Audiobookshelf para escuchar tu biblioteca.
+            La disponibilidad y las funciones pueden variar según la app y la región.
+          </Typography>
+          <Typography variant="subtitle2">Absorb · Android y iPhone</Typography>
+          <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+            <Button component="a" href="https://play.google.com/store/apps/details?id=com.barnabas.absorb" target="_blank" rel="noopener noreferrer" size="small" variant="outlined">Google Play</Button>
+            <Button component="a" href="https://apps.apple.com/app/absorb-for-audiobookshelf/id6760673498" target="_blank" rel="noopener noreferrer" size="small" variant="outlined">App Store</Button>
+          </Stack>
+          <Typography variant="subtitle2">AudioBooth · iPhone</Typography>
+          <Button component="a" href="https://apps.apple.com/app/audiobooth-audiobooks-player/id6753017503" target="_blank" rel="noopener noreferrer" size="small" variant="outlined" sx={{ alignSelf: 'flex-start' }}>App Store</Button>
+          {config.serverUrl ? (
+            <>
+              <Typography variant="subtitle2">Cómo conectarte</Typography>
+              <Box component="ol" sx={{ pl: 2.5, my: 0 }}>
+                <Typography component="li" variant="body2">Instala y abre la app; elige conectar un servidor de Audiobookshelf.</Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  En servidor, introduce <strong>{config.serverUrl}</strong>.
+                </Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
+                  Inicia sesión con tu correo de BookBrief{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} y tu contraseña de BookBrief.
+                </Typography>
+                <Typography component="li" variant="body2" sx={{ mt: 1 }}>Abre la biblioteca «Resúmenes» para escuchar tus audios.</Typography>
+              </Box>
+            </>
+          ) : (
+            <Alert severity="warning">No hay una dirección HTTPS para móviles configurada. Contacta al administrador del servicio.</Alert>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            Puedes sincronizar tu progreso y, si la app lo permite, descargar audios. Para subir, editar o eliminar contenido,
+            usa BookBrief en la web. Algunas funciones de las apps no están disponibles en BookBrief.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Administra el acceso en «Sesiones de apps». Al cerrar una sesión se revoca su acceso al servidor, pero sus
+            descargas pueden permanecer en el dispositivo.
+          </Typography>
+        </>
+      )}
+    </Stack>
+  )
+}
+
+function AppSessionsSection() {
   const [devices, setDevices] = useState<LinkedDevice[] | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -262,32 +325,40 @@ function DevicesSection() {
   }
 
   return (
-    <Stack spacing={1.5}>
+    <Stack spacing={1.5} component="section">
       <Typography variant="h6" component="h2">
-        Apps vinculadas
+        Sesiones de apps
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Cada app compatible con Audiobookshelf que inicia sesión queda aquí. Si pierdes un dispositivo, quítalo: dejará de
-        tener acceso de inmediato.
+        Cada inicio de sesión crea una entrada: una misma app o dispositivo puede aparecer varias veces. El nombre lo
+        proporciona la app y no identifica necesariamente un dispositivo único.
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        El último uso se actualiza como máximo una vez por hora y no indica si la app está conectada ahora.
+        Al cerrar una sesión se revoca su acceso al servidor; sus audios descargados pueden permanecer en el dispositivo.
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
-      {devices?.length === 0 && <Typography color="text.secondary">No hay apps vinculadas.</Typography>}
+      {devices?.length === 0 && <Typography color="text.secondary">No hay sesiones de apps.</Typography>}
       {devices?.map((d) => (
         <Stack key={d.id} direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <Typography>{d.name}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Vinculada {formatDate(d.createdAt)} · último uso {formatDate(d.lastUsedAt)}
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ overflowWrap: 'anywhere' }}>{d.name}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              Inicio: {formatDate(d.createdAt)} · último uso registrado: {formatDate(d.lastUsedAt)}
             </Typography>
-          </div>
-          <Button color="error" size="small" disabled={busy} onClick={() => run(() => revokeDevice(d.id))}>
-            Quitar
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+              ID de sesión: {d.id}
+            </Typography>
+          </Box>
+          <Button color="error" size="small" disabled={busy} onClick={() => run(() => revokeDevice(d.id))}
+            aria-label={`Cerrar sesión de ${d.name}, ID ${d.id}`}>
+            Cerrar sesión
           </Button>
         </Stack>
       ))}
       {devices && devices.length > 1 && (
         <Button color="error" size="small" disabled={busy} onClick={() => run(revokeAllDevices)} sx={{ alignSelf: 'flex-start' }}>
-          Quitar todas
+          Cerrar todas las sesiones de apps
         </Button>
       )}
     </Stack>
@@ -373,7 +444,9 @@ export default function AccountView() {
       <Divider />
       <UsageSection />
       <Divider />
-      <DevicesSection />
+      <MobileAppsSection />
+      <Divider />
+      <AppSessionsSection />
       <Divider />
       <DeleteAccountSection />
     </Stack>
