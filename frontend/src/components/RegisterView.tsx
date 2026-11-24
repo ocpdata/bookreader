@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link as RouterLink, Navigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -101,8 +102,17 @@ export default function RegisterView() {
   }
 
   return (
-    <AuthCard title="Crear cuenta">
+    <AuthCard title="Crear cuenta de prueba">
       {source && <Alert severity="info">Regístrate con el mismo correo que recibió la invitación. Después de verificarlo e iniciar sesión podrás aceptarla.</Alert>}
+      <Box>
+        <Typography variant="subtitle1" component="h2">Condiciones de la prueba gratuita</Typography>
+        <Box component="ul" sx={{ pl: 2.5, my: 1 }}>
+          <Typography component="li" variant="body2">30 días desde que verificas tu correo, sin tarjeta. Una prueba por correo.</Typography>
+          <Typography component="li" variant="body2">2 GB y hasta 25 audios propios.</Typography>
+          <Typography component="li" variant="body2">Al terminar podrás seguir escuchando y descargando tus audios; para subir nuevos necesitarás una suscripción.</Typography>
+          {source && <Typography component="li" variant="body2">Podrás seguir escuchando los audios compartidos mientras el propietario mantenga tu acceso.</Typography>}
+        </Box>
+      </Box>
       <form onSubmit={handleSubmit}>
         <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required fullWidth autoFocus sx={{ mb: 2 }} />
         <TextField label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required fullWidth sx={{ mb: 2 }} />
@@ -159,7 +169,7 @@ export default function RegisterView() {
           </Alert>
         )}
         <Button type="submit" variant="contained" disabled={busy} fullWidth sx={{ mt: 1 }}>
-          Crear cuenta
+          Crear cuenta de prueba
         </Button>
       </form>
       <Link component={RouterLink} to={loginPath} variant="body2">
