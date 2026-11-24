@@ -129,7 +129,15 @@ export default function App() {
             <>
               <Box sx={{ flexGrow: 1 }} />
               <Stack component="nav" aria-label="Navegación principal" direction="row" spacing={0.5}
-                sx={{ order: { xs: 3, md: 0 }, flexBasis: { xs: '100%', md: 'auto' }, overflowX: 'auto' }}>
+                sx={{
+                  order: { xs: 3, md: 0 },
+                  flexBasis: { xs: '100%', md: 'auto' },
+                  flexWrap: { xs: 'wrap', md: 'nowrap' },
+                  minWidth: 0,
+                  maxWidth: '100%',
+                  overflowX: { xs: 'visible', md: 'auto' },
+                  '& .MuiButton-root': { flexShrink: 0 },
+                }}>
                 <Button component={NavLink} to="/" end sx={navSx}>Inicio</Button>
                 <Button component={NavLink} to="/biblioteca" sx={navSx}>Biblioteca</Button>
                 <Button component={NavLink} to="/compartidos" sx={navSx}>Compartidos</Button>
@@ -139,7 +147,7 @@ export default function App() {
                 {user.role === 'ADMIN' && <Button component={NavLink} to="/administracion" sx={navSx}>Administración</Button>}
               </Stack>
               <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-                <Button component={NavLink} to="/cuenta" sx={{ ...navSx, maxWidth: { xs: 140, sm: 220 }, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <Button component={NavLink} to="/cuenta" sx={{ ...navSx, display: 'block', maxWidth: { xs: 140, sm: 220 }, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user.name}
                 </Button>
                 <Button color="inherit" onClick={handleLogout}>Salir</Button>
