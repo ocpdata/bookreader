@@ -40,9 +40,9 @@ function DeleteAccountSection() {
     setError('')
     try {
       await deleteAccount(password)
-      // La sesión ya no existe en el servidor: se limpia la local y se vuelve a la portada.
-      await logout()
+      // La sesión ya no existe en el servidor: se vuelve a la portada y se limpia la local.
       navigate('/', { replace: true })
+      await logout()
     } catch (err) {
       setError((err as Error).message)
       setBusy(false)

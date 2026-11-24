@@ -39,8 +39,8 @@ export default function TermsGate() {
   }
 
   async function leave() {
-    await logout()
     navigate('/', { replace: true })
+    await logout()
   }
 
   return (

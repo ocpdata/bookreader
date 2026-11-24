@@ -102,8 +102,9 @@ export default function App() {
   }
 
   async function handleLogout() {
-    await logout()
+    // Primero se sale de la página protegida: si no, RequireAuth redirige a /entrar al quedar sin sesión.
     navigate('/', { replace: true })
+    await logout()
   }
 
   return (
