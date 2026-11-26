@@ -25,7 +25,6 @@ export default function RegisterView() {
   const planParam = params.get('plan')
   const checkoutPlan: BillingPlan | null =
     planParam === 'monthly' || planParam === 'yearly' ? planParam : null
-  const isTrialMarketing = !checkoutPlan && !source
   const loginPath = source ? '/entrar?from=share' : checkoutPlan ? `/entrar?checkout=${checkoutPlan}` : '/entrar'
 
   function changeCheckoutPlan(plan: BillingPlan) {
@@ -57,11 +56,11 @@ export default function RegisterView() {
   if (mode === 'error') {
     return (
       <AuthCard
-        title={checkoutPlan ? 'Continúa con Premium' : isTrialMarketing ? 'Empieza tu prueba gratis' : 'Crear cuenta'}
-        width={checkoutPlan || isTrialMarketing ? 760 : 400}
+        title={checkoutPlan ? 'Continúa con Premium' : 'Empieza tu prueba gratis'}
+        width={760}
       >
         {checkoutPlan && <PremiumPlanSummary plan={checkoutPlan} onPlanChange={changeCheckoutPlan} />}
-        {isTrialMarketing && <TrialPlanSummary />}
+        {!checkoutPlan && <TrialPlanSummary shared={Boolean(source)} />}
         <Alert severity="error">No se pudo comprobar si el registro está disponible.</Alert>
         <Button onClick={() => { setMode(undefined); setConfigAttempt((attempt) => attempt + 1) }}>Reintentar</Button>
         <Link component={RouterLink} to={loginPath}>Ya tengo una cuenta</Link>
@@ -71,11 +70,11 @@ export default function RegisterView() {
   if (mode === 'closed') {
     return (
       <AuthCard
-        title={checkoutPlan ? 'Continúa con Premium' : isTrialMarketing ? 'Empieza tu prueba gratis' : 'Crear cuenta'}
-        width={checkoutPlan || isTrialMarketing ? 760 : 400}
+        title={checkoutPlan ? 'Continúa con Premium' : 'Empieza tu prueba gratis'}
+        width={760}
       >
         {checkoutPlan && <PremiumPlanSummary plan={checkoutPlan} onPlanChange={changeCheckoutPlan} />}
-        {isTrialMarketing && <TrialPlanSummary />}
+        {!checkoutPlan && <TrialPlanSummary shared={Boolean(source)} />}
         <Alert severity="info">El registro no está disponible por ahora.</Alert>
         <Link component={RouterLink} to={loginPath}>
           Ya tengo una cuenta
@@ -104,8 +103,8 @@ export default function RegisterView() {
   if (sent) {
     return (
       <AuthCard
-        title={checkoutPlan ? 'Un paso más para activar Premium' : isTrialMarketing ? 'Tu prueba empieza al verificar' : 'Revisa tu correo'}
-        width={checkoutPlan || isTrialMarketing ? 960 : 400}
+        title={checkoutPlan ? 'Un paso más para activar Premium' : 'Tu prueba empieza al verificar'}
+        width={960}
       >
         {checkoutPlan ? (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, .9fr) minmax(0, 1.1fr)' }, gap: 3, alignItems: 'start' }}>
@@ -132,9 +131,9 @@ export default function RegisterView() {
               </Link>
             </Stack>
           </Box>
-        ) : isTrialMarketing ? (
+        ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, .9fr) minmax(0, 1.1fr)' }, gap: 3, alignItems: 'start' }}>
-            <TrialPlanSummary stage="verification" />
+            <TrialPlanSummary stage="verification" shared={Boolean(source)} />
             <Stack spacing={2}>
               <Alert severity="success">{sent}</Alert>
               <Typography variant="body2" color="text.secondary">
@@ -142,7 +141,7 @@ export default function RegisterView() {
               </Typography>
               <Typography variant="body2">1. Revisa tu correo</Typography>
               <Typography variant="body2">2. Verifica la cuenta para iniciar la prueba</Typography>
-              <Typography variant="body2">3. Inicia sesión y empieza a organizar tus audios</Typography>
+              <Typography variant="body2">{source ? '3. Inicia sesión y acepta la invitación para escuchar los audios compartidos' : '3. Inicia sesión y empieza a organizar tus audios'}</Typography>
               {resent && <Alert severity="info">Si la cuenta sigue sin verificar, te enviamos otro enlace.</Alert>}
               <Button
                 size="small"
@@ -157,25 +156,6 @@ export default function RegisterView() {
               </Link>
             </Stack>
           </Box>
-        ) : (
-          <>
-            <Alert severity="success">{sent}</Alert>
-            <Typography variant="body2" color="text.secondary">
-              Enviamos un enlace a <strong>{email}</strong>. Verifica tu correo, inicia sesión con esa cuenta y acepta la invitación para escuchar los audios compartidos.
-            </Typography>
-            {resent && <Alert severity="info">Si la cuenta sigue sin verificar, te enviamos otro enlace.</Alert>}
-            <Button
-              size="small"
-              sx={{ alignSelf: 'flex-start' }}
-              onClick={() => resendVerification(email, source).then(() => setResent(true), (err: Error) => setError(err.message))}
-            >
-              Reenviar el correo
-            </Button>
-            {error && <Alert severity="error">{error}</Alert>}
-            <Link component={RouterLink} to={loginPath}>
-              Ir a iniciar sesión
-            </Link>
-          </>
         )}
       </AuthCard>
     )
@@ -266,36 +246,19 @@ export default function RegisterView() {
     )
   }
 
-  if (isTrialMarketing) {
-    return (
-      <AuthCard title="Tu biblioteca empieza gratis" width={1000}>
-        <Typography color="text.secondary">
-          Prueba BookBrief con tus propios audios, sin registrar una tarjeta ni comprometerte a una suscripción.
-        </Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, .95fr) minmax(0, 1.05fr)' }, gap: { xs: 3, md: 4 }, alignItems: 'start' }}>
-          <TrialPlanSummary />
-          <Stack spacing={2}>
-            <Typography variant="h6" component="h2">Crea tu cuenta para empezar</Typography>
-            {accountForm}
-          </Stack>
-        </Box>
-      </AuthCard>
-    )
-  }
-
   return (
-    <AuthCard title="Crear cuenta de prueba">
-      {source && <Alert severity="info">Regístrate con el mismo correo que recibió la invitación. Después de verificarlo e iniciar sesión podrás aceptarla.</Alert>}
-      <Box>
-        <Typography variant="subtitle1" component="h2">Condiciones de la prueba gratuita</Typography>
-        <Box component="ul" sx={{ pl: 2.5, my: 1 }}>
-          <Typography component="li" variant="body2">30 días desde que verificas tu correo, sin tarjeta. Una prueba por correo.</Typography>
-          <Typography component="li" variant="body2">2 GB y hasta 25 audios propios.</Typography>
-          <Typography component="li" variant="body2">Al terminar podrás seguir escuchando y descargando tus audios; para subir nuevos necesitarás una suscripción.</Typography>
-          {source && <Typography component="li" variant="body2">Podrás seguir escuchando los audios compartidos mientras el propietario mantenga tu acceso.</Typography>}
-        </Box>
+    <AuthCard title="Tu biblioteca empieza gratis" width={1000}>
+      <Typography color="text.secondary">
+        Prueba BookBrief con tus propios audios, sin registrar una tarjeta ni comprometerte a una suscripción.
+      </Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, .95fr) minmax(0, 1.05fr)' }, gap: { xs: 3, md: 4 }, alignItems: 'start' }}>
+        <TrialPlanSummary shared={Boolean(source)} />
+        <Stack spacing={2}>
+          <Typography variant="h6" component="h2">Crea tu cuenta para empezar</Typography>
+          {source && <Alert severity="info">Regístrate con el mismo correo que recibió la invitación. Después de verificarlo e iniciar sesión podrás aceptarla.</Alert>}
+          {accountForm}
+        </Stack>
       </Box>
-      {accountForm}
     </AuthCard>
   )
 }

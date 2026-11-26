@@ -8,8 +8,10 @@ import { Link as RouterLink } from 'react-router-dom'
 
 export default function TrialPlanSummary({
   stage = 'registration',
+  shared = false,
 }: {
   stage?: 'registration' | 'verification'
+  shared?: boolean
 }) {
   return (
     <Paper
@@ -44,6 +46,7 @@ export default function TrialPlanSummary({
           <Typography><strong>2 GB</strong> para tus audios.</Typography>
           <Typography>Hasta <strong>25 audios propios</strong>.</Typography>
           <Typography>Una prueba de 30 días por correo.</Typography>
+          {shared && <Typography>Seguirás escuchando los audios compartidos mientras el propietario mantenga tu acceso.</Typography>}
         </Stack>
 
         <Divider />
