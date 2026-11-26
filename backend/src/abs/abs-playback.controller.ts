@@ -45,8 +45,8 @@ export class AbsPlaybackController {
   }
 
   /**
-   * Audio de una sesión de reproducción, sin cabeceras de autorización: el id aleatorio de la sesión es el
-   * secreto. Se sirve desde S3 con soporte de Range (los reproductores buscan y retoman por rangos).
+   * Audio de una sesión de reproducción, sin cabeceras de autorización. Se sirve desde S3 con soporte de
+   * Range y comprobación actual de permisos (los reproductores buscan y retoman por rangos).
    */
   @Public()
   @Get('public/session/:sessionId/track/:index')

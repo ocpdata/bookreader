@@ -275,12 +275,16 @@ describe('Acceso a audios compartidos (e2e)', () => {
     await api()
       .get(`/api/items/${first}/cover`)
       .set(as(recipientId))
-      .expect(404);
+      .expect(200);
     const absProgress = await api()
       .get('/api/me/progress')
       .set(as(recipientId))
       .expect(200);
-    expect(absProgress.body.mediaProgress).toEqual([]);
+    expect(absProgress.body.mediaProgress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ libraryItemId: first, currentTime: 40 }),
+      ]),
+    );
 
     await prisma.user.update({
       where: { id: recipientId },

@@ -129,7 +129,7 @@ export class AbsLibraryController {
   @Get('items/:id')
   async item(@CurrentUser() userId: string, @Param('id') id: string, @Query() query: Record<string, string>) {
     const row = await this.abs.item(userId, id);
-    const item = itemOf(row, query.expanded === '1');
+    const item = itemOf(row, userId, query.expanded === '1');
     const progress = row.progress[0];
     if (progress && (query.include ?? '').split(',').includes('progress')) {
       const [mine] = (await this.abs.progressList(userId)).filter((p) => p.libraryItemId === id);

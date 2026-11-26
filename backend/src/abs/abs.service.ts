@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { SummaryStatus } from '@prisma/client';
+import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SharingService } from '../sharing/sharing.service';
 import { StatisticsService } from '../statistics/statistics.service';
 import { SummariesService } from '../summaries/summaries.service';
 import { LIBRARY_ID } from './abs.constants';
@@ -42,27 +43,51 @@ export interface ProgressUpdate {
 export class AbsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly sharing: SharingService,
     private readonly summaries: SummariesService,
     private readonly playSessions: PlaySessionService,
     private readonly statistics: StatisticsService,
   ) {}
 
-  private readonly live = (userId: string) => ({ userId, status: SummaryStatus.READY, deletedAt: null });
+  private async readableWhere(userId: string): Promise<Prisma.SummaryWhereInput> {
+    return {
+      status: SummaryStatus.READY,
+      deletedAt: null,
+      AND: [await this.sharing.readableWhere(userId)],
+    };
+  }
 
-  allItems(userId: string): Promise<ItemRow[]> {
-    return this.prisma.summary.findMany({ where: this.live(userId), include: itemInclude(userId) });
+  private visibleTo(row: ItemRow, userId: string): ItemRow {
+    if (row.userId === userId) return row;
+    return {
+      ...row,
+      category: { ...row.category, id: '', name: 'Compartido' },
+      tags: [],
+      folderId: null,
+    };
+  }
+
+  async allItems(userId: string): Promise<ItemRow[]> {
+    const rows = await this.prisma.summary.findMany({
+      where: await this.readableWhere(userId),
+      include: itemInclude(userId),
+    });
+    return rows.map((row) => this.visibleTo(row, userId));
   }
 
   /** Un audio ajeno o inexistente es un 404, igual que en el resto de la API. */
   async item(userId: string, id: string): Promise<ItemRow> {
-    const row = await this.prisma.summary.findFirst({ where: { id, ...this.live(userId) }, include: itemInclude(userId) });
+    const row = await this.prisma.summary.findFirst({
+      where: { id, ...(await this.readableWhere(userId)) },
+      include: itemInclude(userId),
+    });
     if (!row) throw new NotFoundException('Elemento no encontrado');
-    return row;
+    return this.visibleTo(row, userId);
   }
 
   async progressList(userId: string) {
     const rows = await this.prisma.playbackProgress.findMany({
-      where: { userId, summary: { userId, status: SummaryStatus.READY, deletedAt: null } },
+      where: { userId, summary: await this.readableWhere(userId) },
       include: { summary: { select: { id: true, durationSeconds: true } } },
       orderBy: { updatedAt: 'desc' },
     });
@@ -79,7 +104,11 @@ export class AbsService {
   /** Marcadores del usuario (de un audio o de todos) en el formato de las apps; no incluye audios en la papelera. */
   async bookmarks(userId: string, itemId?: string) {
     const rows = await this.prisma.bookmark.findMany({
-      where: { userId, ...(itemId ? { summaryId: itemId } : {}), summary: { userId, status: SummaryStatus.READY, deletedAt: null } },
+      where: {
+        userId,
+        ...(itemId ? { summaryId: itemId } : {}),
+        summary: await this.readableWhere(userId),
+      },
       orderBy: [{ summaryId: 'asc' }, { timeSeconds: 'asc' }],
     });
     return rows.map(bookmarkOf);
@@ -143,7 +172,7 @@ export class AbsService {
     const sorted = sortItems(filterItems(await this.allItems(userId), filterBy), sort, desc);
     const slice = limit > 0 ? sorted.slice(page * limit, page * limit + limit) : sorted;
     return {
-      results: slice.map((row) => itemOf(row, !minified)),
+      results: slice.map((row) => itemOf(row, userId, !minified)),
       total: sorted.length,
       limit,
       page,
@@ -172,7 +201,7 @@ export class AbsService {
       label,
       labelStringKey: key,
       type: 'book',
-      entities: list.slice(0, limit).map((r) => itemOf(r)),
+      entities: list.slice(0, limit).map((r) => itemOf(r, userId)),
       total: list.length,
     });
     return [
@@ -186,15 +215,15 @@ export class AbsService {
     const rows = (await this.allItems(userId))
       .filter((r) => r.progress[0] && !r.progress[0].completed && r.progress[0].positionSeconds > 0 && !r.progress[0].hideFromContinue)
       .sort((a, b) => b.progress[0].updatedAt.getTime() - a.progress[0].updatedAt.getTime());
-    return rows.map((r) => ({ ...itemOf(r), progressLastUpdate: r.progress[0].updatedAt.getTime() }));
+    return rows.map((r) => ({ ...itemOf(r, userId), progressLastUpdate: r.progress[0].updatedAt.getTime() }));
   }
 
   async batchGet(userId: string, ids: string[]) {
     const rows = await this.prisma.summary.findMany({
-      where: { id: { in: ids.slice(0, 200) }, ...this.live(userId) },
+      where: { id: { in: ids.slice(0, 200) }, ...(await this.readableWhere(userId)) },
       include: itemInclude(userId),
     });
-    return rows.map((r) => itemOf(r, true));
+    return rows.map((r) => itemOf(this.visibleTo(r, userId), userId, true));
   }
 
   private groupCounts(values: (string | null | undefined)[]) {
@@ -258,7 +287,7 @@ export class AbsService {
       updatedAt: author.updatedAt,
       numBooks: rows.length,
       series: [],
-      libraryItems: rows.map((r) => itemOf(r)),
+      libraryItems: rows.map((r) => itemOf(r, userId)),
     };
   }
 
@@ -279,7 +308,7 @@ export class AbsService {
         name: pathOf(f.id),
         libraryId: LIBRARY_ID,
         description: null,
-        books: items.get(f.id)!.map((r) => itemOf(r)),
+        books: items.get(f.id)!.map((r) => itemOf(r, userId)),
         lastUpdate: Math.max(f.updatedAt.getTime(), ...items.get(f.id)!.map((r) => r.updatedAt.getTime())),
         createdAt: f.createdAt.getTime(),
       }))
@@ -309,7 +338,7 @@ export class AbsService {
     const matchOf = (r: ItemRow) =>
       includes(r.title) ? ['title', r.title] : includes(r.author) ? ['authors', r.author] : includes(r.summaryTitle) ? ['title', r.summaryTitle!] : ['tags', r.tags.find((t) => includes(t.tag.name))!.tag.name];
     return {
-      book: books.slice(0, limit).map((r) => ({ libraryItem: itemOf(r), matchKey: matchOf(r)[0], matchText: matchOf(r)[1] })),
+      book: books.slice(0, limit).map((r) => ({ libraryItem: itemOf(r, userId), matchKey: matchOf(r)[0], matchText: matchOf(r)[1] })),
       podcast: [],
       narrators: needle
         ? this.groupCounts(rows.map((r) => r.narrator)).filter(([name]) => includes(name)).map(([name, numBooks]) => ({ name, numBooks }))
@@ -339,7 +368,7 @@ export class AbsService {
     const device = obj(body.deviceInfo);
     const deviceName = [str(device.clientName), str(device.model)].filter(Boolean).join(' · ') || 'Dispositivo';
     const session = await this.playSessions.create(userId, itemId, deviceName, startTime);
-    return playSessionOf(row, session, startTime, { ...device, ipAddress: ip }, str(body.mediaPlayer) ?? 'unknown');
+    return playSessionOf(row, session, startTime, { ...device, ipAddress: ip }, str(body.mediaPlayer) ?? 'unknown', userId);
   }
 
   /**
@@ -385,6 +414,7 @@ export class AbsService {
   async syncSession(userId: string, sessionId: string, body: Record<string, unknown>) {
     const session = await this.playSessions.findOwned(sessionId, userId);
     if (!session) throw new NotFoundException('Sesión no encontrada');
+    await this.item(userId, session.summaryId);
     const currentTime = num(body.currentTime);
     if (currentTime !== undefined) await this.updateProgress(userId, session.summaryId, { currentTime });
     const timeListened = num(body.timeListened);
@@ -401,12 +431,16 @@ export class AbsService {
     const currentTime = num(s.currentTime);
     if (!itemId || currentTime === undefined) return { id, success: false, error: 'Sesión no válida' };
 
-    const row = await this.prisma.summary.findFirst({ where: { id: itemId, ...this.live(userId) }, include: itemInclude(userId) });
+    const row = await this.prisma.summary.findFirst({
+      where: { id: itemId, ...(await this.readableWhere(userId)) },
+      include: itemInclude(userId),
+    });
     if (!row) return { id, success: false, error: 'Elemento no encontrado' };
+    const visibleRow = this.visibleTo(row, userId);
     // El tiempo escuchado se registra aunque el progreso ya esté al día: un reenvío no lo duplica.
     const timeListening = num(s.timeListening);
     if (timeListening) await this.statistics.recordAppSession(userId, itemId, id, timeListening, num(s.updatedAt));
-    const existing = row.progress[0];
+    const existing = visibleRow.progress[0];
     const reportedAt = num(s.updatedAt) ?? Date.now();
     if (existing && existing.updatedAt.getTime() >= reportedAt) return { id, success: true, progressSynced: false };
     await this.updateProgress(userId, itemId, { currentTime });
@@ -430,7 +464,10 @@ export class AbsService {
       const p = obj(entry);
       const itemId = str(p.libraryItemId);
       if (!itemId) continue;
-      const row = await this.prisma.summary.findFirst({ where: { id: itemId, ...this.live(userId) }, include: itemInclude(userId) });
+      const row = await this.prisma.summary.findFirst({
+        where: { id: itemId, ...(await this.readableWhere(userId)) },
+        include: itemInclude(userId),
+      });
       if (!row) continue;
       const existing = row.progress[0];
       if (existing && existing.updatedAt.getTime() >= (num(p.lastUpdate) ?? Date.now())) continue;

@@ -74,6 +74,7 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
   let categoryId: string;
   const emails: string[] = [];
   let counter = 0;
+  const previousSharingEnabled = process.env.SHARING_ENABLED;
 
   const api = () => request(app.getHttpServer());
   const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -121,6 +122,7 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
   }
 
   beforeAll(async () => {
+    process.env.SHARING_ENABLED = 'true';
     storage = new FakeStorage();
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(StorageService).useValue(storage).compile();
     app = module.createNestApplication();
@@ -145,6 +147,8 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
     await prisma.user.deleteMany({ where: { email: { in: emails } } });
     await prisma.$disconnect();
     await app.close();
+    if (previousSharingEnabled === undefined) delete process.env.SHARING_ENABLED;
+    else process.env.SHARING_ENABLED = previousSharingEnabled;
   });
 
   describe('conexión y login', () => {
@@ -341,6 +345,181 @@ describe('Compatibilidad con apps de Audiobookshelf (e2e)', () => {
       await api().get(`/api/items/${theirs.id}`).set(bearer(tokenA)).expect(404);
       await api().post(`/api/items/${theirs.id}/play`).set(bearer(tokenA)).send({}).expect(404);
       await api().get(`/api/items/${theirs.id}/cover?token=${tokenA}`).expect(404);
+    });
+
+    it('incluye audios compartidos por selección, los marca y mantiene el progreso del oyente', async () => {
+      const owner = await createUser();
+      const recipient = await createUser();
+      const recipientToken = await tokenFor(recipient.email);
+      await prisma.user.update({
+        where: { id: recipient.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+      const privateCategory = await prisma.category.create({
+        data: { userId: owner.id, name: 'Solo propietario' },
+      });
+      const privateTag = await prisma.tag.create({
+        data: { userId: owner.id, name: 'Etiqueta privada' },
+      });
+      const privateFolder = await prisma.folder.create({
+        data: { userId: owner.id, name: 'Carpeta privada' },
+      });
+      const shared = await addItem(owner.id, {
+        categoryId: privateCategory.id,
+        folderId: privateFolder.id,
+        description: 'Descripción original.',
+      });
+      await prisma.summaryTag.create({
+        data: { summaryId: shared.id, tagId: privateTag.id },
+      });
+      const mine = await addItem(recipient.id, { title: 'Audio propio' });
+      const unshared = await addItem(owner.id, { title: 'No compartido' });
+      await prisma.playbackProgress.create({
+        data: { userId: owner.id, summaryId: shared.id, positionSeconds: 35 },
+      });
+      const invitation = await prisma.share.create({
+        data: {
+          ownerId: owner.id,
+          recipientId: recipient.id,
+          email: recipient.email,
+          scope: 'ITEMS',
+          status: 'ACCEPTED',
+          deliveredAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+          items: { create: { summaryId: shared.id } },
+        },
+      });
+
+      const page = await api()
+        .get('/api/libraries/lib_resumenes/items')
+        .set(bearer(recipientToken))
+        .expect(200);
+      expect(page.body.results.map((item: any) => item.id).sort()).toEqual(
+        [mine.id, shared.id].sort(),
+      );
+      expect(page.body.results.map((item: any) => item.id)).not.toContain(unshared.id);
+      const listed = page.body.results.find((item: any) => item.id === shared.id);
+      expect(listed.media.metadata).toMatchObject({
+        genres: ['Compartido'],
+        description: `Descripción original.\n\nCompartido por ${owner.name}.`,
+      });
+      expect(listed.media.tags).toEqual([]);
+
+      const filters = (
+        await api()
+          .get('/api/libraries/lib_resumenes?include=filterdata')
+          .set(bearer(recipientToken))
+      ).body.filterdata;
+      expect(filters.genres).not.toContain('Solo propietario');
+      expect(filters.tags).not.toContain('Etiqueta privada');
+      expect(
+        (await api().get('/api/libraries/lib_resumenes/search?q=privada').set(bearer(recipientToken))).body.book,
+      ).toEqual([]);
+      expect(
+        (await api().get('/api/libraries/lib_resumenes/collections').set(bearer(recipientToken))).body.total,
+      ).toBe(0);
+
+      const detail = await api()
+        .get(`/api/items/${shared.id}?expanded=1`)
+        .set(bearer(recipientToken))
+        .expect(200);
+      const track = detail.body.media.tracks[0];
+      expect(track.contentUrl).toBe(`/api/items/${shared.id}/file/${track.ino}`);
+      const downloaded = await api()
+        .get(track.contentUrl)
+        .set(bearer(recipientToken))
+        .buffer(true)
+        .parse((res, cb) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+      expect([downloaded.status, Buffer.compare(downloaded.body, SAMPLE)]).toEqual([200, 0]);
+
+      const session = await api()
+        .post(`/api/items/${shared.id}/play`)
+        .set(bearer(recipientToken))
+        .send({});
+      expect(session.status).toBe(200);
+      expect(session.body.mediaMetadata).toMatchObject({
+        genres: ['Compartido'],
+        description: `Descripción original.\n\nCompartido por ${owner.name}.`,
+      });
+      await api()
+        .get(session.body.audioTracks[0].contentUrl)
+        .expect(200);
+      await api()
+        .post(`/api/session/${session.body.id}/sync`)
+        .set(bearer(recipientToken))
+        .send({ currentTime: 20 })
+        .expect(200);
+      expect(
+        (await prisma.playbackProgress.findUnique({
+          where: { userId_summaryId: { userId: recipient.id, summaryId: shared.id } },
+        }))?.positionSeconds,
+      ).toBe(20);
+      expect(
+        (await api().get('/api/me/progress').set(bearer(recipientToken))).body.mediaProgress,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ libraryItemId: shared.id, currentTime: 20 }),
+        ]),
+      );
+      expect(
+        (await prisma.playbackProgress.findUnique({
+          where: { userId_summaryId: { userId: owner.id, summaryId: shared.id } },
+        }))?.positionSeconds,
+      ).toBe(35);
+      expect(await prisma.summary.count({ where: { id: shared.id } })).toBe(1);
+
+      await prisma.share.update({
+        where: { id: invitation.id },
+        data: { status: 'REVOKED' },
+      });
+      await api().get(`/api/items/${shared.id}`).set(bearer(recipientToken)).expect(404);
+      await api()
+        .get(track.contentUrl)
+        .set(bearer(recipientToken))
+        .expect(404);
+      await api()
+        .get(`/api/me/progress/${shared.id}`)
+        .set(bearer(recipientToken))
+        .expect(404);
+      await api()
+        .get(session.body.audioTracks[0].contentUrl)
+        .expect(404);
+    });
+
+    it('incluye toda la biblioteca cuando la invitación aceptada tiene ámbito LIBRARY', async () => {
+      const owner = await createUser();
+      const recipient = await createUser();
+      const recipientToken = await tokenFor(recipient.email);
+      await prisma.user.update({
+        where: { id: recipient.id },
+        data: { emailVerifiedAt: new Date() },
+      });
+      const first = await addItem(owner.id, { title: 'Primero compartido' });
+      const second = await addItem(owner.id, { title: 'Segundo compartido' });
+      await prisma.share.create({
+        data: {
+          ownerId: owner.id,
+          recipientId: recipient.id,
+          email: recipient.email,
+          scope: 'LIBRARY',
+          status: 'ACCEPTED',
+          deliveredAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+      const page = await api()
+        .get('/api/libraries/lib_resumenes/items')
+        .set(bearer(recipientToken))
+        .expect(200);
+      expect(page.body.results.map((item: any) => item.id)).toEqual(
+        expect.arrayContaining([first.id, second.id]),
+      );
+      expect(page.body.total).toBe(2);
     });
 
     it('el detalle expandido trae pistas y archivos; sin expanded es la versión mínima', async () => {

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SharingService } from '../sharing/sharing.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** La sesión se renueva con cada uso: una app pausada días puede seguir pidiendo su audio. */
@@ -14,7 +15,10 @@ export class PlaySessionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PlaySessionService.name);
   private timer?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sharing: SharingService,
+  ) {}
 
   onModuleInit() {
     if (process.env.PURGE_ENABLED === 'false') return;
@@ -53,8 +57,7 @@ export class PlaySessionService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Autoriza la URL pública del audio: el id aleatorio de la sesión es el secreto. Devuelve los datos
-   * necesarios para servir el archivo, o null si la sesión caducó o el audio ya no está disponible.
+   * Autoriza la URL pública por sesión y comprueba el permiso actual del usuario antes de servir el audio.
    */
   async findForStreaming(id: string) {
     const session = await this.prisma.playSession.findFirst({
@@ -62,6 +65,7 @@ export class PlaySessionService implements OnModuleInit, OnModuleDestroy {
       include: { summary: { select: { s3Key: true, contentType: true, sizeBytes: true, status: true, deletedAt: true } } },
     });
     if (!session || session.summary.deletedAt || session.summary.status !== SummaryStatus.READY) return null;
+    if (!(await this.sharing.canRead(session.userId, session.summaryId))) return null;
     if (session.expiresAt.getTime() - Date.now() < SESSION_TTL_MS - TOUCH_EVERY_MS) {
       await this.prisma.playSession.update({ where: { id }, data: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) } });
     }

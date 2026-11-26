@@ -13,6 +13,7 @@ export const itemInclude = (userId: string) =>
     category: true,
     tags: { include: { tag: true } },
     progress: { where: { userId } },
+    user: { select: { name: true } },
   }) satisfies Prisma.SummaryInclude;
 
 export type ItemRow = Prisma.SummaryGetPayload<{ include: ReturnType<typeof itemInclude> }>;
@@ -30,7 +31,14 @@ const extOf = (row: ItemRow) => (row.s3Key.endsWith('.m4a') ? '.m4a' : '.mp3');
 const codecOf = (row: ItemRow) => (extOf(row) === '.m4a' ? 'aac' : 'mp3');
 const durationOf = (row: { durationSeconds: number | null }) => row.durationSeconds ?? 0;
 
-export function metadataOf(row: ItemRow) {
+export function metadataOf(row: ItemRow, viewerId: string) {
+  const isShared = row.userId !== viewerId;
+  const description =
+    isShared && row.user.name
+      ? [row.description, `Compartido por ${row.user.name}.`]
+          .filter(Boolean)
+          .join('\n\n')
+      : row.description;
   return {
     title: row.title,
     titleIgnorePrefix: row.title,
@@ -38,12 +46,12 @@ export function metadataOf(row: ItemRow) {
     authors: [{ id: authorIdOf(row.author), name: row.author }],
     narrators: row.narrator ? [row.narrator] : [],
     series: [],
-    genres: [row.category.name],
+    genres: [isShared ? 'Compartido' : row.category.name],
     publishedYear: null,
     publishedDate: null,
     publisher: null,
-    description: row.description,
-    descriptionPlain: row.description,
+    description,
+    descriptionPlain: description,
     isbn: null,
     asin: null,
     language: null,
@@ -114,7 +122,7 @@ export function trackOf(row: ItemRow, contentUrl = `/api/items/${row.id}/file/${
 }
 
 /** Elemento de la biblioteca. `expanded` añade archivos y pistas (detalle); la lista usa la versión mínima. */
-export function itemOf(row: ItemRow, expanded = false) {
+export function itemOf(row: ItemRow, viewerId: string, expanded = false) {
   const file = audioFileOf(row);
   return {
     id: row.id,
@@ -136,7 +144,7 @@ export function itemOf(row: ItemRow, expanded = false) {
     mediaType: 'book',
     media: {
       libraryItemId: row.id,
-      metadata: metadataOf(row),
+      metadata: metadataOf(row, viewerId),
       coverPath: row.coverKey ? `/metadata/items/${row.id}/cover.jpg` : null,
       tags: row.tags.map((t) => t.tag.name),
       numTracks: 1,
@@ -259,6 +267,7 @@ export function playSessionOf(
   currentTime: number,
   deviceInfo: Record<string, unknown>,
   mediaPlayer: string,
+  viewerId: string,
 ) {
   const created = session.createdAt;
   return {
@@ -268,7 +277,7 @@ export function playSessionOf(
     libraryItemId: row.id,
     episodeId: null,
     mediaType: 'book',
-    mediaMetadata: metadataOf(row),
+    mediaMetadata: metadataOf(row, viewerId),
     chapters: [],
     displayTitle: row.title,
     displayAuthor: row.author,
@@ -286,6 +295,6 @@ export function playSessionOf(
     startedAt: ms(created),
     updatedAt: ms(created),
     audioTracks: [trackOf(row, `/public/session/${session.id}/track/1`)],
-    libraryItem: itemOf(row, true),
+    libraryItem: itemOf(row, viewerId, true),
   };
 }
