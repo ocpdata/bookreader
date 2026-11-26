@@ -14,6 +14,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { getAdminStatistics, getMyStatistics, getUserStatistics, type PersonalStatistics, type StatisticsPeriod } from '../api'
 import { formatBytes, formatDuration } from '../format'
+import AdminNav from './AdminNav'
 
 const DAY_MS = 86_400_000
 const PERIOD_DAYS: Record<StatisticsPeriod, number> = { today: 1, week: 7, month: 30 }
@@ -181,7 +182,9 @@ export default function StatisticsView({ admin = false }: { admin?: boolean }) {
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 900 }}>
-      {admin && <Button component={RouterLink} to="/administracion" sx={{ alignSelf: 'flex-start' }}>← Administración de usuarios</Button>}
+      {admin && (id
+        ? <Button component={RouterLink} to="/administracion" sx={{ alignSelf: 'flex-start' }}>← Volver a usuarios</Button>
+        : <AdminNav />)}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' } }}>
         <Box>
           <Typography variant="h5" component="h1">{admin ? 'Estadísticas de administración' : 'Mis estadísticas'}</Typography>

@@ -1,12 +1,13 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserPlan, UserRole, UserStatus } from '@prisma/client';
 import * as request from 'supertest';
 import { OWNER_ID } from '../accounts/account-eraser';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { AdminUserActionsService } from './admin-user-actions.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 import { PasswordService } from './password.service';
 import { UserGuard } from './user.guard';
@@ -24,14 +25,20 @@ interface TestUser {
   status: UserStatus;
   role: UserRole;
   passwordHash: string;
+  plan: UserPlan;
+  planExpiresAt: Date | null;
+  createdAt: Date;
+  lastLoginAt: Date | null;
+  storageLimitBytes: bigint | null;
+  maxAudios: number | null;
 }
 
 describe('Administración de roles', () => {
   let app: INestApplication;
-  const owner: TestUser = { id: OWNER_ID, name: 'Propietario', email: 'owner@example.test', status: UserStatus.ACTIVE, role: UserRole.ADMIN, passwordHash: 'hash' };
-  const user: TestUser = { id: USER_ID, name: 'Usuario', email: 'user@example.test', status: UserStatus.ACTIVE, role: UserRole.USER, passwordHash: 'other' };
-  const admin: TestUser = { id: ADMIN_ID, name: 'Admin', email: 'admin@example.test', status: UserStatus.ACTIVE, role: UserRole.ADMIN, passwordHash: 'other' };
-  const pending: TestUser = { id: PENDING_ID, name: 'Pendiente', email: 'pending@example.test', status: UserStatus.PENDING, role: UserRole.USER, passwordHash: 'other' };
+  const owner: TestUser = { id: OWNER_ID, name: 'Propietario', email: 'owner@example.test', status: UserStatus.ACTIVE, role: UserRole.ADMIN, passwordHash: 'hash', plan: UserPlan.FOUNDER, planExpiresAt: null, createdAt: new Date('2026-01-01'), lastLoginAt: null, storageLimitBytes: null, maxAudios: null };
+  const user: TestUser = { id: USER_ID, name: 'Usuario', email: 'user@example.test', status: UserStatus.ACTIVE, role: UserRole.USER, passwordHash: 'other', plan: UserPlan.FOUNDER, planExpiresAt: null, createdAt: new Date('2026-01-01'), lastLoginAt: null, storageLimitBytes: null, maxAudios: null };
+  const admin: TestUser = { id: ADMIN_ID, name: 'Admin', email: 'admin@example.test', status: UserStatus.ACTIVE, role: UserRole.ADMIN, passwordHash: 'other', plan: UserPlan.FOUNDER, planExpiresAt: null, createdAt: new Date('2026-01-01'), lastLoginAt: null, storageLimitBytes: null, maxAudios: null };
+  const pending: TestUser = { id: PENDING_ID, name: 'Pendiente', email: 'pending@example.test', status: UserStatus.PENDING, role: UserRole.USER, passwordHash: 'other', plan: UserPlan.FOUNDER, planExpiresAt: null, createdAt: new Date('2026-01-01'), lastLoginAt: null, storageLimitBytes: null, maxAudios: null };
   const users = [owner, user, admin, pending];
   const findUnique = jest.fn(async ({ where }: { where: { id: string } }) => users.find((item) => item.id === where.id) ?? null);
   const update = jest.fn(async ({ where, data }: { where: { id: string }; data: { role: UserRole } }) => {
@@ -47,7 +54,9 @@ describe('Administración de roles', () => {
       findUnique,
       findMany: jest.fn(async () => users),
       count: jest.fn(async () => users.length),
+      groupBy: jest.fn(async () => []),
     },
+    summary: { groupBy: jest.fn(async () => []) },
     $transaction: jest.fn(async (fn: (value: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const verify = jest.fn(async (password: string, hash: string | null) => password === PASSWORD && hash === 'hash');
@@ -60,6 +69,7 @@ describe('Administración de roles', () => {
         LoginRateLimiter,
         { provide: PrismaService, useValue: prisma },
         { provide: PasswordService, useValue: { verify } },
+        { provide: AdminUserActionsService, useValue: {} },
         {
           provide: USER_RESOLVER,
           useValue: {

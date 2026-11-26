@@ -22,6 +22,7 @@ import { USER_RESOLVER } from './user.constants';
 import { UserGuard } from './user.guard';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { AdminUserActionsService } from './admin-user-actions.service';
 
 @Global()
 @Module({
@@ -29,6 +30,7 @@ import { AdminService } from './admin.service';
   providers: [
     AuthService,
     AdminService,
+    AdminUserActionsService,
     PasswordService,
     SessionService,
     ApiTokenService,

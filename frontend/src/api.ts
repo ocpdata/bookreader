@@ -76,17 +76,67 @@ export interface CurrentUser {
   hasPassword: boolean
 }
 
+export type AdminStatus = 'ACTIVE' | 'PENDING' | 'SUSPENDED'
+export type AdminRole = 'USER' | 'ADMIN'
+export type AdminPlan = 'NONE' | 'TRIAL' | 'PREMIUM' | 'FOUNDER'
+
 export interface AdminUser {
   id: string
   name: string
   email: string | null
-  role: 'USER' | 'ADMIN'
-  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED'
+  role: AdminRole
+  status: AdminStatus
   isOwner: boolean
+  plan: AdminPlan
+  planExpiresAt: string | null
+  createdAt: string
+  lastLoginAt: string | null
+  usedBytes: number
+  audios: number
+  limitBytes: number
+  maxAudios: number
+  /** true si la administración fijó una cuota distinta a la del plan. */
+  customQuota: boolean
 }
 
-export const listAdminUsers = (page: number) =>
-  request<{ users: AdminUser[]; page: number; pageSize: number; total: number }>(`/admin/users?page=${page}`)
+export interface AdminUsersQuery {
+  page: number
+  pageSize: number
+  q?: string
+  role?: AdminRole
+  status?: AdminStatus
+  plan?: AdminPlan
+  sort?: 'created' | 'lastLogin' | 'name'
+  order?: 'asc' | 'desc'
+}
+
+export interface AdminUsersPage {
+  users: AdminUser[]
+  page: number
+  pageSize: number
+  total: number
+  /** Totales de toda la base, sin los filtros. */
+  summary: { byStatus: Partial<Record<AdminStatus, number>>; byRole: Partial<Record<AdminRole, number>>; byPlan: Partial<Record<AdminPlan, number>> }
+}
+
+export const listAdminUsers = (query: AdminUsersQuery) => {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value))
+  return request<AdminUsersPage>(`/admin/users?${params}`)
+}
+
+const adminPatch = <T>(id: string, action: string, body: object) =>
+  request<T>(`/admin/users/${encodeURIComponent(id)}/${action}`, { method: 'PATCH', body: JSON.stringify(body) })
+
+/** Suspender cierra sus sesiones y apps; reactivar la deja activa (o pendiente si nunca verificó su correo). */
+export const setUserStatus = (id: string, status: 'ACTIVE' | 'SUSPENDED', reason?: string) =>
+  adminPatch<{ id: string; status: AdminStatus }>(id, 'status', { status, ...(reason ? { reason } : {}) })
+
+export const setUserPlan = (id: string, plan: AdminPlan, days?: number) =>
+  adminPatch<{ id: string; plan: AdminPlan }>(id, 'plan', { plan, ...(days ? { days } : {}) })
+
+export const setUserQuota = (id: string, quota: { storageGb?: number; maxAudios?: number; reset?: boolean }) =>
+  adminPatch<{ id: string }>(id, 'quota', quota)
 
 export const changeUserRole = (id: string, role: AdminUser['role'], password: string) =>
   request<{ id: string; role: AdminUser['role'] }>(`/admin/users/${encodeURIComponent(id)}/role`, {

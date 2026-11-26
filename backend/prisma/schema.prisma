@@ -98,8 +98,29 @@ model User {
   sharesReceived    Share[]            @relation("ShareRecipient")
   roleChangesMade   AdminRoleChange[]  @relation("RoleChangeActor")
   roleChangesReceived AdminRoleChange[] @relation("RoleChangeTarget")
+  adminActionsMade  AdminUserAction[] @relation("AdminActionActor")
+  adminActionsReceived AdminUserAction[] @relation("AdminActionTarget")
 
+  @@index([createdAt])
+  @@index([lastLoginAt])
   @@map("users")
+}
+
+// Registro de las acciones de administración sobre una cuenta (suspender, reactivar, plan y cuota).
+model AdminUserAction {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  actorId   String   @map("actor_id") @db.VarChar(36)
+  targetId  String   @map("target_id") @db.VarChar(36)
+  action    String   @db.VarChar(30)
+  // Datos de la acción en texto (motivo, plan, días, cuota); nunca contraseñas.
+  detail    String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  actor     User     @relation("AdminActionActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target    User     @relation("AdminActionTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([targetId, createdAt])
+  @@map("admin_user_actions")
 }
 
 model AdminRoleChange {

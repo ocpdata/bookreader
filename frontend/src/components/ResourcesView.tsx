@@ -1,11 +1,9 @@
 import { useEffect, useState, type MouseEvent, type KeyboardEvent } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
@@ -14,6 +12,7 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { getResourceMetrics, type ResourceMetrics, type StatisticsPeriod } from '../api'
 import { formatBytes } from '../format'
+import AdminNav from './AdminNav'
 
 type Unit = 'percent' | 'bytes' | 'number'
 type Metric = ResourceMetrics['metrics'][string]
@@ -178,7 +177,7 @@ export default function ResourcesView() {
 
   return (
     <Stack spacing={3.5}>
-      <Button component={RouterLink} to="/administracion" sx={{ alignSelf: 'flex-start', p: 0 }}>← Volver a administración</Button>
+      <AdminNav />
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between', alignItems: { sm: 'flex-end' } }}>
         <Box>
           <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 750, letterSpacing: '0.1em' }}>MONITOREO · AWS</Typography>

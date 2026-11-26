@@ -35,6 +35,29 @@ export interface UsageSummary {
 }
 
 /**
+ * Límites efectivos de una cuenta. Los del plan (FOUNDER conserva los valores clásicos del servicio) y, por encima,
+ * la cuota propia que fije la administración.
+ */
+export function effectiveLimits(user: { storageLimitBytes: bigint | null; maxAudios: number | null; plan: UserPlan }) {
+  const planLimits =
+    user.plan === UserPlan.NONE || user.plan === UserPlan.TRIAL
+      ? { limitBytes: TRIAL_STORAGE_LIMIT_BYTES, maxAudios: TRIAL_MAX_AUDIOS }
+      : user.plan === UserPlan.PREMIUM
+        ? {
+            limitBytes: positive(process.env.PREMIUM_STORAGE_LIMIT_BYTES, PREMIUM_STORAGE_LIMIT_BYTES),
+            maxAudios: positive(process.env.PREMIUM_MAX_AUDIOS, PREMIUM_MAX_AUDIOS),
+          }
+        : {
+            limitBytes: positive(process.env.DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES),
+            maxAudios: positive(process.env.DEFAULT_MAX_AUDIOS, DEFAULT_MAX_AUDIOS),
+          };
+  return {
+    limitBytes: user.storageLimitBytes !== null ? Number(user.storageLimitBytes) : planLimits.limitBytes,
+    maxAudios: user.maxAudios ?? planLimits.maxAudios,
+  };
+}
+
+/**
  * Cuotas de almacenamiento y de número de audios por usuario. Cuenta todas las filas del usuario (también las
  * cargas pendientes, que ya reservan su espacio, y la papelera, cuyo archivo sigue en S3). Los valores por
  * defecto salen de DEFAULT_STORAGE_LIMIT_BYTES y DEFAULT_MAX_AUDIOS; cada cuenta puede tener los suyos
@@ -49,23 +72,10 @@ export class QuotaService {
       where: { id: userId },
       select: { storageLimitBytes: true, maxAudios: true, plan: true, planExpiresAt: true },
     });
-    // Límites del plan; FOUNDER conserva los valores clásicos del servicio. Una cuota fijada por
-    // administración (set-quota) tiene prioridad sobre el plan.
-    const planLimits =
-      user.plan === UserPlan.NONE || user.plan === UserPlan.TRIAL
-        ? { limitBytes: TRIAL_STORAGE_LIMIT_BYTES, maxAudios: TRIAL_MAX_AUDIOS }
-        : user.plan === UserPlan.PREMIUM
-          ? {
-              limitBytes: positive(process.env.PREMIUM_STORAGE_LIMIT_BYTES, PREMIUM_STORAGE_LIMIT_BYTES),
-              maxAudios: positive(process.env.PREMIUM_MAX_AUDIOS, PREMIUM_MAX_AUDIOS),
-            }
-          : {
-              limitBytes: positive(process.env.DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES),
-              maxAudios: positive(process.env.DEFAULT_MAX_AUDIOS, DEFAULT_MAX_AUDIOS),
-            };
+    const { limitBytes, maxAudios } = effectiveLimits(user);
     return {
-      limitBytes: user.storageLimitBytes !== null ? Number(user.storageLimitBytes) : planLimits.limitBytes,
-      maxAudios: user.maxAudios ?? planLimits.maxAudios,
+      limitBytes,
+      maxAudios,
       plan: user.plan,
       planExpiresAt: user.planExpiresAt,
       uploadsBlocked:
