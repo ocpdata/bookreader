@@ -17,15 +17,20 @@ import { useAuth } from '../auth'
  * antes de que existieran o cuando cambian). Las páginas de los propios textos quedan libres para poder leerlos.
  */
 export default function TermsGate() {
-  const { user, acceptTerms, logout } = useAuth()
+  const { user } = useAuth()
   const location = useLocation()
+  const reading = location.pathname === '/terminos' || location.pathname === '/privacidad'
+  if (!user?.needsTerms || reading) return null
+  // Componente aparte: se desmonta al aceptar y la siguiente aparición empieza sin estado previo.
+  return <TermsDialog />
+}
+
+function TermsDialog() {
+  const { acceptTerms, logout } = useAuth()
   const navigate = useNavigate()
   const [accepted, setAccepted] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-
-  const reading = location.pathname === '/terminos' || location.pathname === '/privacidad'
-  if (!user?.needsTerms || reading) return null
 
   async function accept() {
     setBusy(true)
