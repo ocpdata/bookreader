@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { getAuthConfig, type BillingPlan, type RegistrationMode } from '../api'
 import { useAuth } from '../auth'
+import GoogleSignIn, { googleErrorMessage } from './GoogleSignIn'
 import PremiumPlanSummary from './PremiumPlanSummary'
 
 export default function LoginView() {
@@ -34,14 +35,18 @@ export default function LoginView() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => googleErrorMessage(new URLSearchParams(location.search).get('error')))
   const [busy, setBusy] = useState(false)
   const [registration, setRegistration] = useState<RegistrationMode>('closed')
+  const [google, setGoogle] = useState(false)
   const [configError, setConfigError] = useState(false)
 
   useEffect(() => {
     getAuthConfig()
-      .then((config) => setRegistration(config.registration))
+      .then((config) => {
+        setRegistration(config.registration)
+        setGoogle(config.google)
+      })
       .catch(() => setConfigError(true))
   }, [])
 
@@ -79,6 +84,7 @@ export default function LoginView() {
         {shareRegistration && (
           <Alert severity="info">Usa el mismo correo que recibió la invitación.</Alert>
         )}
+        {google && <GoogleSignIn source={shareRegistration ? 'share' : undefined} plan={checkoutPlan} />}
         <TextField
           label="Correo"
           type="email"

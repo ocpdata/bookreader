@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -9,31 +9,57 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import Link from '@mui/material/Link'
 import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getMobileConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
+import { changePassword, confirmCheckout, createAppPassword, deleteAccount, getBillingConfig, googleReauthUrl, getMobileConfig, getUsage, listAppPasswords, listDevices, openBillingPortal, revokeAllDevices, revokeAppPassword, revokeDevice, startCheckout, type AppPassword, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
 import { PREMIUM_PRICING } from '../billing-plans'
 import { formatBytes } from '../format'
 
 const MIN_LENGTH = 12
 
-/** Zona de peligro: eliminar la cuenta y todo su contenido, confirmando con la contraseña. */
+const REAUTH_ERRORS: Record<string, string> = {
+  cancelled: 'Cancelaste la confirmación con Google.',
+  too_many: 'Demasiados intentos. Inténtalo de nuevo en un rato.',
+  unavailable: 'La confirmación con Google no está disponible por ahora.',
+}
+
+/**
+ * Zona de peligro: eliminar la cuenta y todo su contenido. Se confirma con la contraseña o, si la cuenta no tiene
+ * (entra con Google), volviendo a identificarse con Google justo antes.
+ */
 function DeleteAccountSection() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const withGoogle = user?.hasPassword === false
   const [open, setOpen] = useState(false)
+  const [confirmedByGoogle, setConfirmedByGoogle] = useState(false)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Al volver de Google el servidor deja el resultado en ?reauth=…; se recoge y se limpia la dirección.
+  useEffect(() => {
+    const result = params.get('reauth')
+    if (!result) return
+    setOpen(true)
+    if (result === 'ok') setConfirmedByGoogle(true)
+    else setError(REAUTH_ERRORS[result] ?? 'No se pudo confirmar con Google. Usa la misma cuenta de Google con la que entraste.')
+    const next = new URLSearchParams(params)
+    next.delete('reauth')
+    setParams(next, { replace: true })
+  }, [params, setParams])
 
   function close() {
     if (busy) return
     setOpen(false)
     setPassword('')
     setError('')
+    setConfirmedByGoogle(false)
   }
 
   async function confirm(e: FormEvent) {
@@ -41,7 +67,7 @@ function DeleteAccountSection() {
     setBusy(true)
     setError('')
     try {
-      await deleteAccount(password)
+      await deleteAccount(withGoogle ? undefined : password)
       // La sesión ya no existe en el servidor: se vuelve a la portada y se limpia la local.
       navigate('/', { replace: true })
       await logout()
@@ -68,18 +94,25 @@ function DeleteAccountSection() {
           <DialogContent>
             <DialogContentText sx={{ mb: 2 }}>
               Se eliminarán de forma definitiva tus audios y todos tus datos, y se cerrarán tus sesiones web y de apps. Las copias técnicas de los
-              archivos pueden tardar hasta 14 días en desaparecer. Escribe tu contraseña para confirmar.
+              archivos pueden tardar hasta 14 días en desaparecer.{' '}
+              {!withGoogle
+                ? 'Escribe tu contraseña para confirmar.'
+                : confirmedByGoogle
+                  ? 'Identidad confirmada con Google. Tienes unos minutos para completar la eliminación.'
+                  : 'Para confirmar, vuelve a identificarte con la cuenta de Google con la que entras.'}
             </DialogContentText>
-            <TextField
-              label="Contraseña"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              fullWidth
-              autoFocus
-            />
+            {!withGoogle && (
+              <TextField
+                label="Contraseña"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                fullWidth
+                autoFocus
+              />
+            )}
             {error && (
               <Alert severity="error" sx={{ mt: 2 }}>
                 {error}
@@ -90,9 +123,15 @@ function DeleteAccountSection() {
             <Button onClick={close} disabled={busy}>
               Cancelar
             </Button>
-            <Button type="submit" color="error" variant="contained" disabled={busy || !password}>
-              Eliminar definitivamente
-            </Button>
+            {withGoogle && !confirmedByGoogle ? (
+              <Button component="a" href={googleReauthUrl} variant="contained">
+                Confirmar con Google
+              </Button>
+            ) : (
+              <Button type="submit" color="error" variant="contained" disabled={busy || (!withGoogle && !password)}>
+                Eliminar definitivamente
+              </Button>
+            )}
           </DialogActions>
         </form>
       </Dialog>
@@ -311,7 +350,7 @@ function MobileAppsSection() {
                   En servidor, introduce <strong>{config.serverUrl}</strong>.
                 </Typography>
                 <Typography component="li" variant="body2" sx={{ mt: 1, overflowWrap: 'anywhere' }}>
-                  Inicia sesión con tu correo de BookBrief{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} y tu contraseña de BookBrief.
+                  Inicia sesión con tu correo de BookBrief{user?.email ? <> (<strong>{user.email}</strong>)</> : ''} y tu contraseña de BookBrief o un código de aplicación (más abajo).
                 </Typography>
                 <Typography component="li" variant="body2" sx={{ mt: 1 }}>Abre la biblioteca «Resúmenes» para escuchar tus audios.</Typography>
               </Box>
@@ -319,6 +358,7 @@ function MobileAppsSection() {
           ) : (
             <Alert severity="warning">No hay una dirección HTTPS para móviles configurada. Contacta al administrador del servicio.</Alert>
           )}
+          <AppPasswordsSection />
           <Typography variant="body2" color="text.secondary">
             Puedes sincronizar tu progreso y, si la app lo permite, descargar audios. Para subir, editar o eliminar contenido,
             usa BookBrief en la web. Algunas funciones de las apps no están disponibles en BookBrief.
@@ -328,6 +368,108 @@ function MobileAppsSection() {
             descargas pueden permanecer en el dispositivo.
           </Typography>
         </>
+      )}
+    </Stack>
+  )
+}
+
+function AppPasswordsSection() {
+  const { user } = useAuth()
+  const [codes, setCodes] = useState<AppPassword[] | null>(null)
+  const [name, setName] = useState('')
+  const [created, setCreated] = useState<{ name: string; code: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = () =>
+    listAppPasswords()
+      .then(setCodes)
+      .catch((e: Error) => setError(e.message))
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  async function create(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const result = await createAppPassword(name)
+      setCreated({ name: result.name, code: result.code })
+      setCopied(false)
+      setName('')
+      await load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revoke(id: string) {
+    setBusy(true)
+    setError('')
+    try {
+      await revokeAppPassword(id)
+      await load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copy(code: string) {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography variant="subtitle2">Códigos de aplicación</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {user?.hasPassword === false
+          ? 'Tu cuenta entra con Google, así que las apps no pueden usar una contraseña. Crea un código para cada dispositivo y escríbelo en el campo de contraseña de la app, junto con tu correo.'
+          : 'Si prefieres no escribir tu contraseña en la app, crea un código para cada dispositivo y úsalo en su lugar.'}{' '}
+        El código solo funciona en las apps, no en la web, y se muestra una sola vez.
+      </Typography>
+      <form onSubmit={create}>
+        <Stack direction="row" spacing={1}>
+          <TextField label="Nombre del dispositivo" size="small" value={name} onChange={(e) => setName(e.target.value)} placeholder="iPhone de Ana" slotProps={{ htmlInput: { maxLength: 100 } }} fullWidth />
+          <Button type="submit" variant="outlined" disabled={busy} sx={{ whiteSpace: 'nowrap' }}>Crear código</Button>
+        </Stack>
+      </form>
+      {error && <Alert severity="error">{error}</Alert>}
+      {created && (
+        <Alert severity="success" onClose={() => setCreated(null)}>
+          <Typography variant="body2">Código para «{created.name}». Cópialo ahora: no volverá a mostrarse.</Typography>
+          <Typography component="p" sx={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 700, my: 1, overflowWrap: 'anywhere' }}>{created.code}</Typography>
+          <Button size="small" onClick={() => copy(created.code)}>{copied ? 'Copiado' : 'Copiar'}</Button>
+        </Alert>
+      )}
+      {codes?.map((c) => (
+        <Stack key={c.id} direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ overflowWrap: 'anywhere' }}>{c.name}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              Creado: {formatDate(c.createdAt)} · último uso: {formatDate(c.lastUsedAt)}
+            </Typography>
+          </Box>
+          <Button color="error" size="small" disabled={busy} onClick={() => revoke(c.id)} aria-label={`Revocar el código de ${c.name}`}>
+            Revocar
+          </Button>
+        </Stack>
+      ))}
+      {codes && codes.length > 0 && (
+        <Typography variant="caption" color="text.secondary">
+          Revocar un código impide iniciar sesión con él. Las sesiones que ya abrió siguen activas hasta que las cierres en «Sesiones de apps».
+        </Typography>
       )}
     </Stack>
   )
@@ -440,41 +582,51 @@ export default function AccountView() {
           <Typography color="text.secondary">
             {user?.name} · {user?.email}
           </Typography>
-          <Typography variant="h6" component="h2">
-            Cambiar contraseña
-          </Typography>
-          {/* Campo oculto de usuario: los gestores de contraseñas lo usan para asociar la nueva. */}
-          <input type="text" name="username" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
-          <TextField
-            label="Contraseña actual"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-            required
-          />
-          <TextField
-            label="Contraseña nueva"
-            type="password"
-            autoComplete="new-password"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            helperText={`Al menos ${MIN_LENGTH} caracteres.`}
-            required
-          />
-          <TextField
-            label="Repite la contraseña nueva"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-          />
-          {error && <Alert severity="error">{error}</Alert>}
-          {done && <Alert severity="success">Contraseña actualizada. Se cerraron tus otras sesiones.</Alert>}
-          <Button type="submit" variant="contained" disabled={busy} sx={{ alignSelf: 'flex-start' }}>
-            Guardar contraseña
-          </Button>
+          {user?.hasPassword === false ? (
+            <Alert severity="info">
+              Entras con Google, por eso tu cuenta no tiene contraseña ni la necesita: en las apps móviles usa un código de
+              aplicación. Si aun así quieres tener una, créala con <Link component={RouterLink} to="/olvide">«Olvidé mi contraseña»</Link>.
+            </Alert>
+          ) : (
+            <>
+              <Typography variant="h6" component="h2">
+                Cambiar contraseña
+              </Typography>
+              {/* Campo oculto de usuario: los gestores de contraseñas lo usan para asociar la nueva. */}
+              <input type="text" name="username" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
+              <TextField
+                label="Contraseña actual"
+                type="password"
+                autoComplete="current-password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                required
+              />
+              <TextField
+                label="Contraseña nueva"
+                type="password"
+                autoComplete="new-password"
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                helperText={`Al menos ${MIN_LENGTH} caracteres.`}
+                required
+              />
+              <TextField
+                label="Repite la contraseña nueva"
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+              />
+              {error && <Alert severity="error">{error}</Alert>}
+              {done && <Alert severity="success">Contraseña actualizada. Se cerraron tus otras sesiones.</Alert>}
+              <Button type="submit" variant="contained" disabled={busy} sx={{ alignSelf: 'flex-start' }}>
+                Guardar contraseña
+              </Button>
+
+            </>
+          )}
         </Stack>
       </form>
       <Divider />

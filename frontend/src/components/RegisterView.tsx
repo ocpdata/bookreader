@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography'
 import { getAuthConfig, registerAccount, resendVerification, type BillingPlan, type RegistrationMode } from '../api'
 import { useAuth } from '../auth'
 import AuthCard from './AuthCard'
+import GoogleSignIn from './GoogleSignIn'
 import PremiumPlanSummary from './PremiumPlanSummary'
 import TrialPlanSummary from './TrialPlanSummary'
 
@@ -33,6 +34,7 @@ export default function RegisterView() {
     setParams(nextParams, { replace: true })
   }
   const [mode, setMode] = useState<RegistrationMode | 'error' | undefined>(undefined)
+  const [google, setGoogle] = useState(false)
   const [configAttempt, setConfigAttempt] = useState(0)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -47,7 +49,10 @@ export default function RegisterView() {
 
   useEffect(() => {
     getAuthConfig()
-      .then((config) => setMode(config.registration))
+      .then((config) => {
+        setMode(config.registration)
+        setGoogle(config.google)
+      })
       .catch(() => setMode('error'))
   }, [configAttempt])
 
@@ -163,6 +168,7 @@ export default function RegisterView() {
 
   const accountForm = (
     <>
+      {mode === 'open' && google && <GoogleSignIn source={source} plan={checkoutPlan} />}
       <form onSubmit={handleSubmit}>
         <TextField label="Nombre" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required fullWidth autoFocus={Boolean(source) && !checkoutPlan} sx={{ mb: 2 }} />
         <TextField label="Correo" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required fullWidth sx={{ mb: 2 }} />

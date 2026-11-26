@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { googleConfigured } from './google-oauth.client';
 import { Public } from './public.decorator';
 import { registrationMode } from './registration.config';
 import { EmailDto, RegisterDto, ResetPasswordDto, TokenDto, VerificationEmailDto } from './registration.dto';
@@ -15,11 +16,11 @@ const GENERIC = {
 export class RegistrationController {
   constructor(private readonly registration: RegistrationService) {}
 
-  /** Lo que la pantalla de acceso necesita saber: si se puede crear cuenta y si pide invitación. */
+  /** Lo que la pantalla de acceso necesita saber: si se puede crear cuenta, si pide invitación y si hay acceso con Google. */
   @Public()
   @Get('config')
   config() {
-    return { registration: registrationMode() };
+    return { registration: registrationMode(), google: googleConfigured() };
   }
 
   @Public()

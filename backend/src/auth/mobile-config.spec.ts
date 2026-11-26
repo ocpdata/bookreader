@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { absCompatEnabled } from '../abs/abs.constants';
 import { ApiTokenService } from './api-token.service';
+import { AppPasswordService } from './app-password.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
@@ -22,6 +23,7 @@ describe('Configuración de apps móviles', () => {
         { provide: AuthService, useValue: {} },
         { provide: SessionService, useValue: {} },
         { provide: ApiTokenService, useValue: {} },
+        { provide: AppPasswordService, useValue: {} },
         {
           provide: USER_RESOLVER,
           useValue: {

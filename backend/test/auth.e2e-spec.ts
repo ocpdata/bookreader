@@ -167,8 +167,8 @@ describe('Autenticación (e2e)', () => {
   it('inicia sesión con cookie httpOnly y sin exponer la contraseña ni el token en la base', async () => {
     const user = await createUser('Dueña@Auth.test');
     const { cookie, raw, body } = await login('  dueña@auth.TEST  '); // el correo se normaliza
-    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test', needsTerms: true, role: 'USER', isOwner: false });
-    expect(JSON.stringify(body)).not.toMatch(/hash|password/i);
+    expect(body).toEqual({ id: user.id, name: user.name, email: 'dueña@auth.test', needsTerms: true, role: 'USER', isOwner: false, hasPassword: true });
+    expect(JSON.stringify(body)).not.toMatch(/hash|"password"/i);
     expect(raw).toMatch(/^br_session=[A-Za-z0-9_-]{43}/);
     expect(raw).toMatch(/HttpOnly/i);
     expect(raw).toMatch(/SameSite=Lax/i);

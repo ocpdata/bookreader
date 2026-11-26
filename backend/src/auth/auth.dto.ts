@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class LoginDto {
   // Se recorta antes de validar: un correo pegado con espacios no debe rechazarse.
@@ -26,8 +26,15 @@ export class ChangePasswordDto {
 }
 
 export class DeleteAccountDto {
+  /** Se omite en las cuentas sin contraseña, que confirman volviendo a identificarse con Google. */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(200)
-  password!: string;
+  password?: string;
+}
+
+export class AppPasswordDto {
+  @IsString()
+  @MaxLength(100)
+  name!: string;
 }

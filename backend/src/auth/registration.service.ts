@@ -15,6 +15,7 @@ import { MailService } from '../mail/mail.service';
 import { accountDeletedMessage, accountExistsMessage, passwordChangedMessage, resetPasswordMessage, verifyEmailMessage } from '../mail/templates';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiTokenService } from './api-token.service';
+import { AppPasswordService } from './app-password.service';
 import { EmailTokenService } from './email-token.service';
 import { InvitationService } from './invitation.service';
 import { PasswordService } from './password.service';
@@ -50,6 +51,7 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     private readonly mail: MailService,
     private readonly sessions: SessionService,
     private readonly apiTokens: ApiTokenService,
+    private readonly appPasswords: AppPasswordService,
     private readonly limiter: SlidingWindowLimiter,
   ) {}
 
@@ -151,6 +153,14 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     if (user?.status === UserStatus.PENDING && this.mayMail(email)) await this.sendVerification(user, source);
   }
 
+  /** Vencimiento de la prueba de un correo: TRIAL_DAYS la primera vez y, si ya la usó, ahora mismo (sin prueba). */
+  async claimTrial(email: string | null | undefined) {
+    if (!email) return new Date();
+    const emailHash = createHash('sha256').update(email).digest('hex');
+    const claimed = await this.prisma.trialClaim.createMany({ data: [{ emailHash }], skipDuplicates: true });
+    return claimed.count ? new Date(Date.now() + TRIAL_DAYS * 24 * HOUR_MS) : new Date();
+  }
+
   async verifyEmail(token: string) {
     const consumed = await this.tokens.consume(token, 'VERIFY_EMAIL');
     if (!consumed) throw new BadRequestException(INVALID_LINK);
@@ -159,15 +169,7 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
       select: { email: true, pendingCheckoutPlan: true },
     });
     // La prueba es una por correo y sobrevive al borrado de la cuenta: solo se guarda el hash de la dirección.
-    let planExpiresAt: Date | null = null;
-    if (!user?.pendingCheckoutPlan) {
-      planExpiresAt = new Date();
-      if (user?.email) {
-        const emailHash = createHash('sha256').update(user.email).digest('hex');
-        const claimed = await this.prisma.trialClaim.createMany({ data: [{ emailHash }], skipDuplicates: true });
-        if (claimed.count) planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 24 * HOUR_MS);
-      }
-    }
+    const planExpiresAt = user?.pendingCheckoutPlan ? null : await this.claimTrial(user?.email);
     await this.prisma.user.updateMany({
       where: { id: consumed.userId, status: UserStatus.PENDING },
       data: {
@@ -219,6 +221,7 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
     });
     await this.sessions.destroyAll(user.id);
     await this.apiTokens.revokeAll(user.id);
+    await this.appPasswords.revokeAll(user.id);
     if (user.email) await this.safeSend(passwordChangedMessage(user.name, appUrl('/olvide')), user.email);
   }
 

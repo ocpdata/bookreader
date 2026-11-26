@@ -88,6 +88,8 @@ model User {
   folders           Folder[]
   categories        Category[]
   apiTokens         ApiToken[]
+  appPasswords      AppPassword[]
+  identities        UserIdentity[]
   playSessions      PlaySession[]
   listeningEvents   ListeningEvent[]
   bookmarks         Bookmark[]
@@ -336,6 +338,34 @@ model ApiToken {
 
   @@index([userId])
   @@map("api_tokens")
+}
+
+// Código de aplicación: sustituye a la contraseña en el acceso de las apps compatibles (solo se guarda su hash).
+model AppPassword {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  userId     String    @map("user_id") @db.VarChar(36)
+  codeHash   String    @unique @map("code_hash") @db.VarChar(64)
+  name       String    @db.VarChar(100)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("app_passwords")
+}
+
+// Cuenta de un proveedor externo (Google) ligada a una persona; se identifica por el `sub`, nunca solo por el correo.
+model UserIdentity {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  userId    String   @map("user_id") @db.VarChar(36)
+  provider  String   @db.VarChar(20)
+  subject   String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@map("user_identities")
 }
 
 // Sesión de reproducción de una app compatible: su id (aleatorio) autoriza la URL pública del audio.

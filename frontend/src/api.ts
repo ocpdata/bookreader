@@ -72,6 +72,8 @@ export interface CurrentUser {
   needsTerms: boolean
   role: 'USER' | 'ADMIN'
   isOwner: boolean
+  /** false en las cuentas creadas con Google: no tienen contraseña hasta que crean una. */
+  hasPassword: boolean
 }
 
 export interface AdminUser {
@@ -132,9 +134,15 @@ export const getUserStatistics = (id: string, period: StatisticsPeriod) =>
 
 export const acceptTerms = () => request<CurrentUser>('/auth/accept-terms', { method: 'POST' })
 
-/** Elimina la cuenta y todo su contenido; la contraseña mala es un 400 (no cierra la sesión). */
-export const deleteAccount = (password: string) =>
-  request<void>('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) })
+/**
+ * Elimina la cuenta y todo su contenido. Se confirma con la contraseña (un error es un 400, no cierra la sesión) o, en
+ * las cuentas sin contraseña, sin ella tras confirmar la identidad con Google (`googleReauthUrl`).
+ */
+export const deleteAccount = (password?: string) =>
+  request<void>('/auth/account', { method: 'DELETE', body: JSON.stringify(password ? { password } : {}) })
+
+/** Navegación del navegador: vuelve a identificar a la persona con Google y regresa a /cuenta?reauth=… */
+export const googleReauthUrl = '/api/auth/google/reauth'
 
 export const login = (email: string, password: string) =>
   request<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
@@ -148,7 +156,16 @@ export const getMobileConfig = () => request<{ enabled: boolean; serverUrl: stri
 export type RegistrationMode = 'closed' | 'invite' | 'open'
 export type BillingPlan = 'monthly' | 'yearly'
 
-export const getAuthConfig = () => request<{ registration: RegistrationMode }>('/auth/config')
+export const getAuthConfig = () => request<{ registration: RegistrationMode; google: boolean }>('/auth/config')
+
+/** Es una navegación del navegador (redirige a Google), no una llamada de la API. */
+export function googleSignInUrl({ source, plan }: { source?: 'share'; plan?: BillingPlan | null }) {
+  const params = new URLSearchParams()
+  if (source) params.set('from', source)
+  if (plan) params.set('plan', plan)
+  const query = params.toString()
+  return `/api/auth/google/start${query ? `?${query}` : ''}`
+}
 
 export interface RegisterFields {
   email: string
@@ -219,6 +236,21 @@ export const listDevices = () => request<LinkedDevice[]>('/auth/devices')
 export const revokeDevice = (id: string) => request<void>(`/auth/devices/${id}`, { method: 'DELETE' })
 
 export const revokeAllDevices = () => request<void>('/auth/devices', { method: 'DELETE' })
+
+export interface AppPassword {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
+export const listAppPasswords = () => request<AppPassword[]>('/auth/app-passwords')
+
+/** El código solo se devuelve al crearlo. */
+export const createAppPassword = (name: string) =>
+  request<AppPassword & { code: string }>('/auth/app-passwords', { method: 'POST', body: JSON.stringify({ name }) })
+
+export const revokeAppPassword = (id: string) => request<void>(`/auth/app-passwords/${id}`, { method: 'DELETE' })
 
 export const listCategories = () => request<SelectableCategory[]>('/categories')
 

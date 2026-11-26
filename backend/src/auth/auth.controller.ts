@@ -2,21 +2,15 @@ import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Pars
 import type { Request, Response } from 'express';
 import { absCompatEnabled, mobileServerUrl } from '../abs/abs.constants';
 import { ApiTokenService } from './api-token.service';
+import { AppPasswordService } from './app-password.service';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, DeleteAccountDto, LoginDto } from './auth.dto';
+import { AppPasswordDto, ChangePasswordDto, DeleteAccountDto, LoginDto } from './auth.dto';
 import { CurrentUser } from './current-user.decorator';
 import { Public } from './public.decorator';
 import { SessionService, SESSION_DAYS } from './session.service';
 import { readSessionToken } from './session-user.resolver';
+import { cookieOptions } from './session-cookie';
 import { SESSION_COOKIE } from './user.constants';
-
-const cookieOptions = () => ({
-  httpOnly: true,
-  // En producción (HTTPS) la cookie solo viaja cifrada; en desarrollo local (http) no puede ser Secure.
-  secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === 'true' : process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/',
-});
 
 @Controller('auth')
 export class AuthController {
@@ -24,6 +18,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly apiTokens: ApiTokenService,
+    private readonly appPasswords: AppPasswordService,
   ) {}
 
   @Public()
@@ -71,6 +66,23 @@ export class AuthController {
   @HttpCode(204)
   async revokeAllDevices(@CurrentUser() userId: string) {
     await this.apiTokens.revokeAll(userId);
+  }
+
+  /** Códigos de aplicación: el código solo se devuelve al crearlo. Como los dispositivos, solo con la sesión web. */
+  @Get('app-passwords')
+  listAppPasswords(@CurrentUser() userId: string) {
+    return this.appPasswords.list(userId);
+  }
+
+  @Post('app-passwords')
+  createAppPassword(@CurrentUser() userId: string, @Body() dto: AppPasswordDto) {
+    return this.appPasswords.create(userId, dto.name);
+  }
+
+  @Delete('app-passwords/:id')
+  @HttpCode(204)
+  async revokeAppPassword(@CurrentUser() userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    if (!(await this.appPasswords.revoke(userId, id))) throw new NotFoundException('Código no encontrado');
   }
 
   @Post('password')

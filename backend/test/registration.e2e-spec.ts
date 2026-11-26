@@ -58,6 +58,8 @@ describe('Registro, verificación y recuperación (e2e)', () => {
     outbox = [];
     failMail = false;
     process.env.REGISTRATION_MODE = 'open';
+    // El .env de desarrollo puede traer credenciales de Google: aquí el acceso con Google debe estar apagado.
+    delete process.env.GOOGLE_OAUTH_CLIENT_ID;
     process.env.STRIPE_SECRET_KEY = 'sk_test_registration';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_registration';
     process.env.STRIPE_PRICE_MONTHLY_ID = 'price_monthly_test';
@@ -84,14 +86,14 @@ describe('Registro, verificación y recuperación (e2e)', () => {
   describe('modos de registro', () => {
     it('informa el modo y, cerrado, rechaza el registro sin crear nada', async () => {
       process.env.REGISTRATION_MODE = 'closed';
-      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'closed' });
+      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'closed', google: false });
       const email = newEmail();
       expect((await register({ email })).status).toBe(403);
       expect(await prisma.user.count({ where: { email } })).toBe(0);
       delete process.env.REGISTRATION_MODE;
-      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'closed' });
+      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'closed', google: false });
       process.env.REGISTRATION_MODE = 'invite';
-      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'invite' });
+      expect((await api().get('/api/auth/config')).body).toEqual({ registration: 'invite', google: false });
     });
 
     it('en modo invitación exige un código válido, de un solo uso o con tope, y lo consume', async () => {
