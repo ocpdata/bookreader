@@ -36,6 +36,10 @@ jobs:
       APP_DOMAIN: ${{ vars.APP_DOMAIN }}
       REGISTRATION_MODE: ${{ vars.REGISTRATION_MODE || 'closed' }}
       SHARING_ENABLED: ${{ vars.SHARING_ENABLED || 'false' }}
+      # Enlace «Comprar el libro» de afiliado: apagado mientras BOOK_LINK_TEMPLATE esté vacío.
+      BOOK_LINKS_ENABLED: ${{ vars.BOOK_LINKS_ENABLED || 'false' }}
+      BOOK_LINK_TEMPLATE: ${{ vars.BOOK_LINK_TEMPLATE }}
+      BOOK_STORE_SEARCH_URL: ${{ vars.BOOK_STORE_SEARCH_URL }}
       # Stripe: con los secretos/variables vacíos, los pagos quedan desactivados (los botones no aparecen).
       # Acceso con Google: con los valores vacíos el botón no aparece.
       GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
@@ -143,6 +147,9 @@ jobs:
             # closed | invite | open (variable de GitHub REGISTRATION_MODE; por defecto cerrado).
             echo "REGISTRATION_MODE=${REGISTRATION_MODE}"
             echo "SHARING_ENABLED=${SHARING_ENABLED}"
+            echo "BOOK_LINKS_ENABLED=${BOOK_LINKS_ENABLED}"
+            echo "BOOK_LINK_TEMPLATE=\"${BOOK_LINK_TEMPLATE}\""
+            echo "BOOK_STORE_SEARCH_URL=\"${BOOK_STORE_SEARCH_URL}\""
             echo "GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}"
             echo "GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}"
             # Suscripciones (Stripe). Vacíos = pagos desactivados.

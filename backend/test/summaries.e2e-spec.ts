@@ -505,6 +505,49 @@ describe('Summaries (e2e)', () => {
     expect(res.body).toHaveLength(0);
   });
 
+  describe('ISBN y enlace de compra', () => {
+    const configureLinks = () => {
+      process.env.BOOK_LINKS_ENABLED = 'true';
+      process.env.BOOK_LINK_TEMPLATE = '{target}&afiliado=ABC';
+    };
+    afterEach(() => {
+      delete process.env.BOOK_LINKS_ENABLED;
+      delete process.env.BOOK_LINK_TEMPLATE;
+    });
+
+    it('guarda el ISBN normalizado al crear, lo edita y lo borra con cadena vacía', async () => {
+      const s = await createReady(DEFAULT_USER_ID, { isbn13: '0-201-61622-X' });
+      expect(s.isbn13).toBe('9780201616224');
+      const edited = await request(app.getHttpServer()).patch(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).send({ isbn13: '978-84-8432-239-9' });
+      expect(edited.body.isbn13).toBe('9788484322399');
+      const untouched = await request(app.getHttpServer()).patch(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).send({ title: 'Nuevo' });
+      expect(untouched.body.isbn13).toBe('9788484322399');
+      const cleared = await request(app.getHttpServer()).patch(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).send({ isbn13: '' });
+      expect(cleared.body.isbn13).toBeNull();
+    });
+
+    it('rechaza un ISBN inválido al crear y al editar', async () => {
+      expect((await createSummary(DEFAULT_USER_ID, { isbn13: '9780201616225' })).status).toBe(400);
+      const s = await createReady(DEFAULT_USER_ID);
+      const res = await request(app.getHttpServer()).patch(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID)).send({ isbn13: '123' });
+      expect(res.status).toBe(400);
+    });
+
+    it('no ofrece enlace de compra mientras esté apagado', async () => {
+      const s = await createReady(DEFAULT_USER_ID);
+      expect(s.bookUrl).toBeNull();
+    });
+
+    it('ofrece el enlace en el detalle, la lista y los audios compartidos', async () => {
+      configureLinks();
+      const s = await createReady(DEFAULT_USER_ID, { isbn13: '9780201616224' });
+      const detail = await request(app.getHttpServer()).get(`/api/summaries/${s.id}`).set(as(DEFAULT_USER_ID));
+      expect(new URL(detail.body.bookUrl).searchParams.get('q')).toBe('9780201616224');
+      const list = await request(app.getHttpServer()).get('/api/summaries').set(as(DEFAULT_USER_ID));
+      expect(list.body[0].bookUrl).toContain('afiliado=ABC');
+    });
+  });
+
   it('edita y limpia campos opcionales con cadena vacía', async () => {
     const s = await createReady(DEFAULT_USER_ID, { summaryTitle: 'Resumen', narrator: 'Ana', description: 'Texto' });
     const res = await request(app.getHttpServer())

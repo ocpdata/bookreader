@@ -148,6 +148,8 @@ model Summary {
   summaryTitle     String?            @map("summary_title") @db.VarChar(200)
   narrator         String?            @db.VarChar(200)
   description      String?            @db.Text
+  // ISBN-13 de la edición del libro (sin guiones); sirve para enlazar a una tienda. Opcional.
+  isbn13           String?            @map("isbn13") @db.VarChar(13)
   durationSeconds  Int?               @map("duration_seconds")
   // Papelera: un audio eliminado conserva su fila y su archivo hasta que expire la retención.
   deletedAt        DateTime?          @map("deleted_at")

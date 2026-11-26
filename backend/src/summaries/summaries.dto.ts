@@ -16,6 +16,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { MAX_TAG_LENGTH, MAX_TAGS_PER_SUMMARY } from '../tags/tags.service';
+import { IsIsbn, isbnTransform } from './isbn';
 
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
 
@@ -67,6 +68,11 @@ export class UpdateSummaryDto {
   @IsString()
   @MaxLength(200)
   narrator?: string;
+
+  @IsOptional()
+  @Transform(isbnTransform)
+  @IsIsbn()
+  isbn13?: string;
 
   @IsOptional()
   @IsUUID()
@@ -124,6 +130,11 @@ export class CreateSummaryDto {
   @IsString()
   @MaxLength(200)
   narrator?: string;
+
+  @IsOptional()
+  @Transform(isbnTransform)
+  @IsIsbn()
+  isbn13?: string;
 
   @IsUUID()
   categoryId!: string;

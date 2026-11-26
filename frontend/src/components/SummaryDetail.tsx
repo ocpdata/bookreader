@@ -10,6 +10,7 @@ import { deleteSummary, getPlaybackUrl, getSummary, recordListening, resetProgre
 import { formatClock, formatDuration } from '../format'
 import type { Progress, Summary } from '../types'
 import AudioPlayer, { type SaveOptions } from './AudioPlayer'
+import BookPurchaseCard from './BookPurchaseCard'
 import CategoryChip from './CategoryChip'
 import ConfirmDialog from './ConfirmDialog'
 import CoverImage from './CoverImage'
@@ -208,6 +209,8 @@ export default function SummaryDetail() {
               onError={handleAudioError}
             />
           )}
+
+          {summary.bookUrl && <BookPurchaseCard url={summary.bookUrl} finished={Boolean(progress?.completed)} />}
 
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Button onClick={toggleFavorite} aria-pressed={favorite} color={favorite ? 'warning' : 'primary'}>

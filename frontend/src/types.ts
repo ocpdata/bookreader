@@ -23,6 +23,10 @@ export interface Summary {
   summaryTitle: string | null
   narrator: string | null
   description: string | null
+  /** ISBN-13 de la edición del libro, si se indicó. */
+  isbn13: string | null
+  /** Enlace de compra del libro (de afiliado) o null si el servicio no lo ofrece. */
+  bookUrl: string | null
   durationSeconds: number | null
   progress: Progress | null
   tags: string[]
@@ -62,6 +66,8 @@ export interface SummaryFields {
   summaryTitle: string
   narrator: string
   description: string
+  /** ISBN-10 o ISBN-13; vacío lo borra. */
+  isbn13?: string
   categoryId: string
   folderId: string | null
   tags: string[]

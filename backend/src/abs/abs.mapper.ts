@@ -52,7 +52,7 @@ export function metadataOf(row: ItemRow, viewerId: string) {
     publisher: null,
     description,
     descriptionPlain: description,
-    isbn: null,
+    isbn: row.isbn13 ?? null,
     asin: null,
     language: null,
     explicit: false,

@@ -21,8 +21,9 @@ import {
   type Usage,
 } from '../api'
 import { formatBytes, formatDuration } from '../format'
+import { normalizeIsbn } from '../isbn'
 import type { SelectableCategory, Folder, Summary, TagSuggestion } from '../types'
-import BookInfoSearchDialog from './BookInfoSearchDialog'
+import IsbnSearchDialog from './IsbnSearchDialog'
 import CategoriesDialog from './CategoriesDialog'
 import CoverField from './CoverField'
 import FolderSelect from './FolderSelect'
@@ -50,6 +51,7 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
   const [author, setAuthor] = useState('')
   const [summaryTitle, setSummaryTitle] = useState('')
   const [narrator, setNarrator] = useState('')
+  const [isbn, setIsbn] = useState('')
   const [categoryId, setCategoryId] = useState('')
   // Un audio nuevo nace en la carpeta desde la que se agregó.
   const [folderId, setFolderId] = useState(editing ? '' : (searchParams.get('carpeta') ?? ''))
@@ -86,6 +88,7 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
         setAuthor(s.author)
         setSummaryTitle(s.summaryTitle ?? '')
         setNarrator(s.narrator ?? '')
+        setIsbn(s.isbn13 ?? '')
         setCategoryId(s.categoryId)
         setFolderId(s.folderId ?? '')
         setDescription(s.description ?? '')
@@ -134,7 +137,9 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
       }
     }
 
-    const fields = { title, author, summaryTitle, narrator, description, categoryId, folderId: folderId || null, tags }
+    const isbn13 = isbn.trim() ? normalizeIsbn(isbn) : ''
+    if (isbn13 === null) return setError('El ISBN no es válido: revisa los dígitos o búscalo con «Buscar ISBN».')
+    const fields = { title, author, summaryTitle, narrator, description, isbn13, categoryId, folderId: folderId || null, tags }
     setSaving(true)
     try {
       if (id) await updateSummary(id, fields)
@@ -185,10 +190,30 @@ export default function SummaryForm({ categories, categoriesReady, onCreateCateg
         {notice && <Alert severity="warning">{notice}</Alert>}
         <TextField label="Título del libro" value={title} onChange={(e) => setTitle(e.target.value)} required />
         <TextField label="Autor del libro" value={author} onChange={(e) => setAuthor(e.target.value)} required />
-        <Button type="button" variant="outlined" onClick={() => setBookSearchOpen(true)} sx={{ alignSelf: 'flex-start' }}>
-          Buscar información en OpenLibrary.org
-        </Button>
-        {bookSearchOpen && <BookInfoSearchDialog title={title} author={author} onClose={() => setBookSearchOpen(false)} />}
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+          <TextField
+            label="ISBN del libro (opcional)"
+            value={isbn}
+            onChange={(e) => setIsbn(e.target.value)}
+            helperText="Identifica la edición exacta y mejora el enlace para comprar el libro."
+            slotProps={{ htmlInput: { maxLength: 20, inputMode: 'numeric' } }}
+            fullWidth
+          />
+          <Button type="button" variant="outlined" onClick={() => setBookSearchOpen(true)} sx={{ flexShrink: 0, height: 56, whiteSpace: 'nowrap' }}>
+            Buscar ISBN
+          </Button>
+        </Stack>
+        {bookSearchOpen && (
+          <IsbnSearchDialog
+            title={title}
+            author={author}
+            onSelect={(value) => {
+              setIsbn(value)
+              setBookSearchOpen(false)
+            }}
+            onClose={() => setBookSearchOpen(false)}
+          />
+        )}
         <TextField
           label="Título del resumen (opcional)"
           value={summaryTitle}

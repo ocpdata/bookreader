@@ -12,6 +12,7 @@ import { TagsService } from '../tags/tags.service';
 import { PurgeService } from './purge.service';
 import { CategoriesService } from '../categories/categories.service';
 import { hashAudio } from './audio-hash';
+import { bookUrlFor } from './book-link';
 import { DriveService } from './drive.service';
 import { SharingService } from '../sharing/sharing.service';
 import { DAY_MS, TRASH_RETENTION_DAYS } from './trash.constants';
@@ -51,6 +52,9 @@ const withRelations = (userId: string) => ({
 
 interface RelationRows {
   id: string;
+  title: string;
+  author: string;
+  isbn13: string | null;
   coverKey: string | null;
   progress: { positionSeconds: number; completed: boolean; updatedAt: Date }[];
   tags: { tag: { name: string } }[];
@@ -67,6 +71,7 @@ function present<T extends RelationRows>(summary: T) {
   const row = progress[0];
   return {
     ...rest,
+    bookUrl: bookUrlFor(rest),
     // La clave de S3 es interna; el cliente solo ve la URL (con versión para invalidar la caché).
     coverUrl: coverUrlOf(summary.id, coverKey),
     progress: row ? { positionSeconds: row.positionSeconds, completed: row.completed, updatedAt: row.updatedAt } : null,
@@ -92,6 +97,8 @@ function presentShared(row: SharedRow) {
     summaryTitle: row.summaryTitle,
     narrator: row.narrator,
     description: row.description,
+    isbn13: row.isbn13,
+    bookUrl: bookUrlFor(row),
     durationSeconds: row.durationSeconds,
     progress: progress ? { positionSeconds: progress.positionSeconds, completed: progress.completed, updatedAt: progress.updatedAt } : null,
     tags: [],
@@ -304,6 +311,7 @@ export class SummariesService {
             summaryTitle: dto.summaryTitle || null,
             narrator: dto.narrator || null,
             description: dto.description || null,
+            isbn13: dto.isbn13 || null,
             categoryId: dto.categoryId,
             folderId: dto.folderId ?? null,
             s3Key,
@@ -504,6 +512,7 @@ export class SummariesService {
           summaryTitle: emptyToNull(dto.summaryTitle),
           narrator: emptyToNull(dto.narrator),
           description: emptyToNull(dto.description),
+          isbn13: emptyToNull(dto.isbn13),
           categoryId: dto.categoryId,
           folderId: dto.folderId,
         },
