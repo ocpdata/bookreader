@@ -10,13 +10,13 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { getHome, setFavorite } from '../api'
 import type { HomeData, Summary } from '../types'
-import SummaryCard from './SummaryCard'
+import { ContinueCard, ShelfCard } from './HomeCards'
 
-const GRID_SX = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 2 }
+const SHELF_SX = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 2.5 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Stack spacing={1.5} component="section">
+    <Stack spacing={2} component="section">
       <Typography variant="h6" component="h2">
         {title}
       </Typography>
@@ -103,38 +103,39 @@ export default function HomeView() {
         <>
           <form onSubmit={submitSearch}>
             <TextField
-              label="Buscar por título, autor o etiqueta"
+              placeholder="Buscar por título, autor o etiqueta"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               fullWidth
-              size="small"
+              slotProps={{ htmlInput: { 'aria-label': 'Buscar por título, autor o etiqueta' } }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', boxShadow: '0 4px 20px rgba(23, 32, 51, 0.035)' } }}
             />
           </form>
 
           {data.continueListening.length > 0 && (
             <Section title="Continuar escuchando">
-              <SummaryCard summary={data.continueListening[0]} compact featured onToggleFavorite={toggleFavorite} />
-              {data.continueListening.length > 1 && <Box sx={GRID_SX}>
+              <ContinueCard summary={data.continueListening[0]} onToggleFavorite={toggleFavorite} />
+              {data.continueListening.length > 1 && <Box sx={SHELF_SX}>
                 {data.continueListening.slice(1).map((s) => (
-                  <SummaryCard key={s.id} summary={s} compact onToggleFavorite={toggleFavorite} />
+                  <ShelfCard key={s.id} summary={s} onToggleFavorite={toggleFavorite} />
                 ))}
               </Box>}
             </Section>
           )}
 
           <Section title="Agregados recientemente">
-            <Box sx={GRID_SX}>
+            <Box sx={SHELF_SX}>
               {data.recent.map((s) => (
-                <SummaryCard key={s.id} summary={s} compact onToggleFavorite={toggleFavorite} />
+                <ShelfCard key={s.id} summary={s} onToggleFavorite={toggleFavorite} />
               ))}
             </Box>
           </Section>
 
           {data.favorites.length > 0 && (
             <Section title="Favoritos">
-              <Box sx={GRID_SX}>
+              <Box sx={SHELF_SX}>
                 {data.favorites.map((s) => (
-                  <SummaryCard key={s.id} summary={s} compact onToggleFavorite={toggleFavorite} />
+                  <ShelfCard key={s.id} summary={s} onToggleFavorite={toggleFavorite} />
                 ))}
               </Box>
             </Section>
@@ -146,6 +147,7 @@ export default function HomeView() {
                 <Chip
                   key={c.id}
                   label={`${c.name} (${c.count})`}
+                  variant="outlined"
                   onClick={() => navigate(`/biblioteca?categoria=${c.id}`)}
                 />
               ))}

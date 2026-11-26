@@ -15,10 +15,14 @@ interface Props {
   size: number
   /** Portada cuadrada que ocupa el ancho de una tarjeta. */
   large?: boolean
+  /** Proporción de la portada cuando ocupa el ancho (por defecto cuadrada). */
+  ratio?: string
+  /** Sin esquinas redondeadas, para portadas que ya quedan dentro de una tarjeta. */
+  flat?: boolean
   author?: string
 }
 
-export default function CoverImage({ src, title, seed, size, large = false, author }: Props) {
+export default function CoverImage({ src, title, seed, size, large = false, ratio = '1 / 1', flat = false, author }: Props) {
   const initials = author?.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
   return (
     <Avatar
@@ -26,8 +30,8 @@ export default function CoverImage({ src, title, seed, size, large = false, auth
       src={src ?? undefined}
       alt={src ? `Portada de ${title}` : ''}
       slotProps={{ img: { loading: 'lazy' } }}
-      sx={{ width: large ? '100%' : size, height: large ? 'auto' : size, aspectRatio: large ? '1 / 1' : undefined,
-        bgcolor: colorFor(seed), fontSize: size / 2.4, flexShrink: 0 }}
+      sx={{ width: large ? '100%' : size, height: large ? 'auto' : size, aspectRatio: large ? ratio : undefined,
+        bgcolor: colorFor(seed), fontSize: size / 2.4, flexShrink: 0, ...(flat ? { borderRadius: 0 } : {}) }}
     >
       {large ? (
         <Box sx={{ width: '100%', height: '100%', p: 2.5, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left', color: '#fff' }}>
