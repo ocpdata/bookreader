@@ -42,8 +42,13 @@ export class RegistrationController {
   @Post('verify-email')
   @HttpCode(200)
   async verify(@Body() dto: TokenDto) {
-    await this.registration.verifyEmail(dto.token);
-    return { message: 'Correo verificado. Ya puedes entrar.' };
+    const result = await this.registration.verifyEmail(dto.token);
+    return {
+      message: result.checkoutPlan
+        ? 'Correo verificado. Inicia sesión para completar la contratación de Premium.'
+        : 'Correo verificado. Ya puedes entrar.',
+      checkoutPlan: result.checkoutPlan,
+    };
   }
 
   @Public()

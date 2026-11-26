@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { Equals, IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { Equals, IsBoolean, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
 // Se recorta y pasa a minúsculas antes de validar: un correo pegado con espacios o en mayúsculas no debe rechazarse.
 const email = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
@@ -29,6 +29,10 @@ export class RegisterDto {
   @IsOptional()
   @Equals('share')
   source?: 'share';
+
+  @IsOptional()
+  @IsIn(['monthly', 'yearly'])
+  plan?: 'monthly' | 'yearly';
 
   @IsBoolean()
   @Equals(true, { message: 'Debes aceptar los términos y el aviso de privacidad' })

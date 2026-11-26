@@ -21,6 +21,12 @@ describe('Registro, verificación y recuperación (e2e)', () => {
   let outbox: MailMessage[];
   let failMail = false;
   let counter = 0;
+  const stripeEnv = {
+    secret: process.env.STRIPE_SECRET_KEY,
+    webhook: process.env.STRIPE_WEBHOOK_SECRET,
+    monthly: process.env.STRIPE_PRICE_MONTHLY_ID,
+    yearly: process.env.STRIPE_PRICE_YEARLY_ID,
+  };
 
   const api = () => request(app.getHttpServer());
   const newEmail = () => `persona${++counter}-${Date.now()}@reg.test`;
@@ -52,11 +58,23 @@ describe('Registro, verificación y recuperación (e2e)', () => {
     outbox = [];
     failMail = false;
     process.env.REGISTRATION_MODE = 'open';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_registration';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_registration';
+    process.env.STRIPE_PRICE_MONTHLY_ID = 'price_monthly_test';
+    process.env.STRIPE_PRICE_YEARLY_ID = 'price_yearly_test';
     app.get(SlidingWindowLimiter).clear();
   });
 
   afterAll(async () => {
     delete process.env.REGISTRATION_MODE;
+    if (stripeEnv.secret) process.env.STRIPE_SECRET_KEY = stripeEnv.secret;
+    else delete process.env.STRIPE_SECRET_KEY;
+    if (stripeEnv.webhook) process.env.STRIPE_WEBHOOK_SECRET = stripeEnv.webhook;
+    else delete process.env.STRIPE_WEBHOOK_SECRET;
+    if (stripeEnv.monthly) process.env.STRIPE_PRICE_MONTHLY_ID = stripeEnv.monthly;
+    else delete process.env.STRIPE_PRICE_MONTHLY_ID;
+    if (stripeEnv.yearly) process.env.STRIPE_PRICE_YEARLY_ID = stripeEnv.yearly;
+    else delete process.env.STRIPE_PRICE_YEARLY_ID;
     await prisma.invitation.deleteMany({ where: { note: 'prueba' } });
     await prisma.user.deleteMany({ where: { email: { endsWith: '@reg.test' } } });
     await prisma.$disconnect();
@@ -187,6 +205,36 @@ describe('Registro, verificación y recuperación (e2e)', () => {
       const again = await prisma.user.findUniqueOrThrow({ where: { email } });
       expect(again.plan).toBe('TRIAL');
       expect(again.planExpiresAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('permite contratar Premium directamente sin activar ni reclamar la prueba', async () => {
+      const email = newEmail();
+      await register({ email, plan: 'yearly' }).expect(202);
+      const pending = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(pending).toMatchObject({
+        status: 'PENDING',
+        plan: 'NONE',
+        pendingCheckoutPlan: 'YEARLY',
+        planExpiresAt: null,
+      });
+
+      const verified = await api()
+        .post('/api/auth/verify-email')
+        .send({ token: tokenIn(sentTo(email)[0]) })
+        .expect(200);
+      expect(verified.body.checkoutPlan).toBe('yearly');
+      const active = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect(active).toMatchObject({ status: 'ACTIVE', plan: 'NONE', planExpiresAt: null });
+      const emailHash = createHash('sha256').update(email).digest('hex');
+      expect(await prisma.trialClaim.findUnique({ where: { emailHash } })).toBeNull();
+    });
+
+    it('no crea una cuenta de compra directa si Stripe no está configurado', async () => {
+      const email = newEmail();
+      delete process.env.STRIPE_WEBHOOK_SECRET;
+      await api().get('/api/billing/config').expect(200).expect({ enabled: false });
+      await register({ email, plan: 'monthly' }).expect(503);
+      expect(await prisma.user.count({ where: { email } })).toBe(0);
     });
 
     it('el enlace de verificación es de un solo uso, caduca y rechaza basura', async () => {

@@ -195,15 +195,15 @@ const commands = {
     const email = normalizeEmail(emailArg);
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) throw new Error('No existe ese usuario');
-    const plan = { trial: 'TRIAL', premium: 'PREMIUM', founder: 'FOUNDER' }[(planArg ?? '').toLowerCase()];
-    if (!plan) throw new Error('Uso: set-plan <correo> <trial|premium|founder> [--days n]');
+    const plan = { none: 'NONE', trial: 'TRIAL', premium: 'PREMIUM', founder: 'FOUNDER' }[(planArg ?? '').toLowerCase()];
+    if (!plan) throw new Error('Uso: set-plan <correo> <none|trial|premium|founder> [--days n]');
     let planExpiresAt = null;
     if (args[0] === '--days') {
       const days = Number(args[1]);
       if (!(days > 0)) throw new Error('--days debe ser un número mayor que 0');
       planExpiresAt = new Date(Date.now() + days * 24 * 3600 * 1000);
     } else if (args.length) {
-      throw new Error('Uso: set-plan <correo> <trial|premium|founder> [--days n]');
+      throw new Error('Uso: set-plan <correo> <none|trial|premium|founder> [--days n]');
     }
     if (plan === 'TRIAL' && !planExpiresAt) throw new Error('El plan trial requiere --days');
     await prisma.user.update({ where: { id: user.id }, data: { plan, planExpiresAt } });

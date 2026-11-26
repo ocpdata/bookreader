@@ -31,6 +31,7 @@ export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
   @Get('config')
+  @Public()
   config() {
     return { enabled: this.billing.enabled };
   }

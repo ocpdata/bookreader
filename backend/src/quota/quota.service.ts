@@ -52,7 +52,7 @@ export class QuotaService {
     // Límites del plan; FOUNDER conserva los valores clásicos del servicio. Una cuota fijada por
     // administración (set-quota) tiene prioridad sobre el plan.
     const planLimits =
-      user.plan === UserPlan.TRIAL
+      user.plan === UserPlan.NONE || user.plan === UserPlan.TRIAL
         ? { limitBytes: TRIAL_STORAGE_LIMIT_BYTES, maxAudios: TRIAL_MAX_AUDIOS }
         : user.plan === UserPlan.PREMIUM
           ? {
@@ -68,7 +68,9 @@ export class QuotaService {
       maxAudios: user.maxAudios ?? planLimits.maxAudios,
       plan: user.plan,
       planExpiresAt: user.planExpiresAt,
-      uploadsBlocked: user.planExpiresAt !== null && user.planExpiresAt.getTime() < Date.now(),
+      uploadsBlocked:
+        user.plan === UserPlan.NONE ||
+        (user.planExpiresAt !== null && user.planExpiresAt.getTime() < Date.now()),
     };
   }
 
@@ -115,9 +117,11 @@ export class QuotaService {
         throw new HttpException(
           {
             message:
-              limits.plan === UserPlan.TRIAL
-                ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios, pero para subir nuevos necesitas una suscripción.'
-                : 'Tu plan venció. Renueva la suscripción para volver a subir audios.',
+              limits.plan === UserPlan.NONE
+                ? 'Completa una suscripción Premium para empezar a subir audios.'
+                : limits.plan === UserPlan.TRIAL
+                  ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios, pero para subir nuevos necesitas una suscripción.'
+                  : 'Tu plan venció. Renueva la suscripción para volver a subir audios.',
             code: 'PLAN_EXPIRED',
           },
           HttpStatus.PAYMENT_REQUIRED,

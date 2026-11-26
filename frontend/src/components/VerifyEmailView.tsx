@@ -3,7 +3,7 @@ import { Link as RouterLink, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import { verifyEmail } from '../api'
+import { verifyEmail, type BillingPlan } from '../api'
 import AuthCard from './AuthCard'
 
 /** Destino del enlace del correo de verificación. Se canjea con un POST desde aquí: un escáner de enlaces no lo gasta. */
@@ -13,6 +13,7 @@ export default function VerifyEmailView() {
   const source = params.get('from') === 'share'
   const [state, setState] = useState<'working' | 'ok' | 'error'>(token ? 'working' : 'error')
   const [message, setMessage] = useState(token ? '' : 'El enlace no es válido.')
+  const [checkoutPlan, setCheckoutPlan] = useState<BillingPlan | null>(null)
   // StrictMode ejecuta el efecto dos veces en desarrollo; el enlace es de un solo uso.
   const started = useRef(false)
 
@@ -22,6 +23,7 @@ export default function VerifyEmailView() {
     verifyEmail(token)
       .then((res) => {
         setMessage(res.message)
+        setCheckoutPlan(res.checkoutPlan)
         setState('ok')
       })
       .catch((e: Error) => {
@@ -36,8 +38,12 @@ export default function VerifyEmailView() {
       {state === 'ok' && <Alert severity="success">{message}</Alert>}
       {state === 'error' && <Alert severity="error">{message}</Alert>}
       {state === 'ok' && (
-        <Button component={RouterLink} to={source ? '/entrar?from=share' : '/entrar'} variant="contained">
-          Iniciar sesión
+        <Button
+          component={RouterLink}
+          to={checkoutPlan ? `/entrar?checkout=${checkoutPlan}` : source ? '/entrar?from=share' : '/entrar'}
+          variant="contained"
+        >
+          {checkoutPlan ? 'Iniciar sesión y continuar al pago' : 'Iniciar sesión'}
         </Button>
       )}
       {state === 'error' && (

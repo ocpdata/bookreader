@@ -121,6 +121,25 @@ export default function App() {
           </Stack>
           {user === null && (
             <>
+              {isLanding && (
+                <Stack
+                  component="nav"
+                  aria-label="Navegación de la portada"
+                  direction="row"
+                  spacing={0.25}
+                  sx={{
+                    order: { xs: 3, md: 0 },
+                    flexBasis: { xs: '100%', md: 'auto' },
+                    flexWrap: 'wrap',
+                    justifyContent: { xs: 'center', md: 'flex-start' },
+                    '& .MuiButton-root': { flexShrink: 0, minWidth: 'auto', px: 1 },
+                  }}
+                >
+                  <Button href="#como-funciona">Cómo funciona</Button>
+                  <Button href="#funciones">Ventajas</Button>
+                  <Button href="#precios">Precios</Button>
+                </Stack>
+              )}
               <Box sx={{ flexGrow: 1 }} />
               <Button component={RouterLink} to="/entrar" variant="outlined">Entrar</Button>
             </>

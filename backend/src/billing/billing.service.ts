@@ -19,6 +19,14 @@ const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
 export type BillingPlan = 'monthly' | 'yearly';
 
+export const billingConfigured = () =>
+  Boolean(
+    process.env.STRIPE_SECRET_KEY &&
+    process.env.STRIPE_WEBHOOK_SECRET &&
+    process.env.STRIPE_PRICE_MONTHLY_ID &&
+    process.env.STRIPE_PRICE_YEARLY_ID,
+  );
+
 /**
  * Suscripciones con Stripe Checkout: el servidor nunca ve tarjetas. El webhook es la fuente de verdad
  * del plan; `confirm` cubre el regreso del pago cuando el webhook aún no llegó (o en desarrollo local).
@@ -31,11 +39,7 @@ export class BillingService {
   constructor(private readonly prisma: PrismaService) {}
 
   get enabled() {
-    return Boolean(
-      process.env.STRIPE_SECRET_KEY &&
-      process.env.STRIPE_PRICE_MONTHLY_ID &&
-      process.env.STRIPE_PRICE_YEARLY_ID,
-    );
+    return billingConfigured();
   }
 
   private get stripe(): Stripe {
@@ -176,9 +180,14 @@ export class BillingService {
         ? {
             plan: UserPlan.PREMIUM,
             planExpiresAt: new Date(periodEnd! * 1000 + GRACE_MS),
+            pendingCheckoutPlan: null,
             ...(customer ? { stripeCustomerId: customer } : {}),
           }
-        : { plan: UserPlan.PREMIUM, planExpiresAt: new Date() },
+        : {
+            plan: UserPlan.PREMIUM,
+            planExpiresAt: new Date(),
+            pendingCheckoutPlan: null,
+          },
     });
     if (!updated.count)
       this.logger.warn(

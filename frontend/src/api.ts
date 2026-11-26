@@ -146,6 +146,7 @@ export const getMe = () => request<CurrentUser>('/auth/me')
 export const getMobileConfig = () => request<{ enabled: boolean; serverUrl: string | null }>('/auth/mobile-config')
 
 export type RegistrationMode = 'closed' | 'invite' | 'open'
+export type BillingPlan = 'monthly' | 'yearly'
 
 export const getAuthConfig = () => request<{ registration: RegistrationMode }>('/auth/config')
 
@@ -155,6 +156,7 @@ export interface RegisterFields {
   password: string
   inviteCode?: string
   source?: 'share'
+  plan?: BillingPlan
   acceptTerms: boolean
 }
 
@@ -165,7 +167,7 @@ export const resendVerification = (email: string, source?: 'share') =>
   request<{ message: string }>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email, ...(source ? { source } : {}) }) })
 
 export const verifyEmail = (token: string) =>
-  request<{ message: string }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) })
+  request<{ message: string; checkoutPlan: BillingPlan | null }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) })
 
 export const forgotPassword = (email: string) =>
   request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
@@ -184,7 +186,7 @@ export interface Usage {
   /** Parte del uso que está en la papelera (cuenta hasta que se elimina de forma definitiva). */
   trashBytes: number
   trashAudios: number
-  plan: 'TRIAL' | 'PREMIUM' | 'FOUNDER'
+  plan: 'NONE' | 'TRIAL' | 'PREMIUM' | 'FOUNDER'
   planExpiresAt: string | null
   /** true cuando la prueba o el plan vencieron: se puede escuchar y borrar, pero no subir. */
   uploadsBlocked: boolean
@@ -195,7 +197,7 @@ export const getUsage = () => request<Usage>('/usage')
 export const getBillingConfig = () => request<{ enabled: boolean }>('/billing/config')
 
 /** Crea la sesión de pago de Stripe y devuelve su URL para redirigir. */
-export const startCheckout = (plan: 'monthly' | 'yearly') =>
+export const startCheckout = (plan: BillingPlan) =>
   request<{ url: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) })
 
 /** Portal de Stripe para gestionar o cancelar la suscripción. */

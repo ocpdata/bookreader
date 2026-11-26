@@ -91,7 +91,7 @@ describe('Cobros con Stripe (e2e)', () => {
       .expect(401);
     await api().post('/api/billing/portal').expect(401);
     await api().post('/api/billing/confirm').send({}).expect(401);
-    await api().get('/api/billing/config').expect(401);
+    await api().get('/api/billing/config').expect(200).expect({ enabled: true });
 
     await api().post('/api/billing/webhook').send({}).expect(400);
     const res = await signedPost(
@@ -106,6 +106,10 @@ describe('Cobros con Stripe (e2e)', () => {
 
   it('una suscripción activa da Premium con margen de gracia y guarda el cliente de Stripe', async () => {
     const user = await createUser();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { plan: 'NONE', pendingCheckoutPlan: 'YEARLY' },
+    });
     const periodEnd = Math.floor(Date.now() / 1000) + 30 * 24 * 3600;
     const res = await signedPost(
       subscriptionEvent('customer.subscription.updated', {
@@ -122,6 +126,7 @@ describe('Cobros con Stripe (e2e)', () => {
       where: { id: user.id },
     });
     expect(updated.plan).toBe('PREMIUM');
+    expect(updated.pendingCheckoutPlan).toBeNull();
     expect(updated.stripeCustomerId).toBe('cus_cliente1');
     const graceDays =
       (updated.planExpiresAt!.getTime() - periodEnd * 1000) / 86400_000;

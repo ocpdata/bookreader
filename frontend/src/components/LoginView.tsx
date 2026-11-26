@@ -8,16 +8,29 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { getAuthConfig, type RegistrationMode } from '../api'
+import { getAuthConfig, type BillingPlan, type RegistrationMode } from '../api'
 import { useAuth } from '../auth'
+import PremiumPlanSummary from './PremiumPlanSummary'
 
 export default function LoginView() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const shareLink = new URLSearchParams(location.search).get('from') === 'share'
-  const from = shareLink ? '/invitaciones' : (location.state as { from?: string } | null)?.from ?? '/'
+  const requestedCheckout = new URLSearchParams(location.search).get('checkout')
+  const checkoutPlan: BillingPlan | null =
+    requestedCheckout === 'monthly' || requestedCheckout === 'yearly' ? requestedCheckout : null
+  const from = shareLink
+    ? '/invitaciones'
+    : checkoutPlan
+      ? `/cuenta?checkout=${checkoutPlan}`
+      : (location.state as { from?: string } | null)?.from ?? '/'
   const shareRegistration = shareLink || from === '/invitaciones' || from === '/compartidos'
+  const registrationPath = shareRegistration
+    ? '/registro?from=share'
+    : checkoutPlan
+      ? `/registro?plan=${checkoutPlan}`
+      : '/registro'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -48,52 +61,72 @@ export default function LoginView() {
     }
   }
 
-  return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', pt: 4 }}>
-      <Paper variant="outlined" sx={{ p: 3, width: '100%', maxWidth: 400 }}>
-        <form onSubmit={handleSubmit}>
-          <Stack spacing={2}>
-            <Typography variant="h5" component="h1">
-              Iniciar sesión
-            </Typography>
-            {shareRegistration && (
-              <Alert severity="info">Usa el mismo correo que recibió la invitación.</Alert>
-            )}
-            <TextField
-              label="Correo"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-            />
-            <TextField
-              label="Contraseña"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            {error && <Alert severity="error">{error}</Alert>}
-            {configError && <Alert severity="error">No se pudo comprobar si el registro está disponible. Recarga la página para intentarlo de nuevo.</Alert>}
-            <Button type="submit" variant="contained" disabled={busy}>
-              Entrar
-            </Button>
-            <Link component={RouterLink} to="/olvide" variant="body2">
-              Olvidé mi contraseña
+  function changeCheckoutPlan(plan: BillingPlan) {
+    navigate(`/entrar?checkout=${plan}`, { replace: true })
+  }
+
+  const loginForm = (
+    <form onSubmit={handleSubmit}>
+      <Stack spacing={2}>
+        <Typography variant="h5" component="h1">
+          {checkoutPlan ? 'Inicia sesión para continuar' : 'Iniciar sesión'}
+        </Typography>
+        {checkoutPlan && (
+          <Typography variant="body2" color="text.secondary">
+            Conservamos el plan que elegiste. Después de entrar podrás revisar y confirmar el pago en Stripe si tu cuenta aún necesita contratar Premium.
+          </Typography>
+        )}
+        {shareRegistration && (
+          <Alert severity="info">Usa el mismo correo que recibió la invitación.</Alert>
+        )}
+        <TextField
+          label="Correo"
+          type="email"
+          autoComplete="username"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoFocus={!checkoutPlan}
+        />
+        <TextField
+          label="Contraseña"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        {error && <Alert severity="error">{error}</Alert>}
+        {configError && <Alert severity="error">No se pudo comprobar si el registro está disponible. Recarga la página para intentarlo de nuevo.</Alert>}
+        <Button type="submit" variant="contained" disabled={busy}>
+          {checkoutPlan ? 'Entrar y continuar' : 'Entrar'}
+        </Button>
+        <Link component={RouterLink} to="/olvide" variant="body2">
+          Olvidé mi contraseña
+        </Link>
+        {registration !== 'closed' && (
+          <Typography variant="body2">
+            ¿No tienes cuenta?{' '}
+            <Link component={RouterLink} to={registrationPath}>
+              {shareRegistration ? 'Crear cuenta de prueba' : checkoutPlan ? 'Crear cuenta para Premium' : 'Crear cuenta'}
             </Link>
-            {registration !== 'closed' && (
-              <Typography variant="body2">
-                ¿No tienes cuenta?{' '}
-                <Link component={RouterLink} to={shareRegistration ? '/registro?from=share' : '/registro'}>
-                  {shareRegistration ? 'Crear cuenta de prueba' : 'Crear cuenta'}
-                </Link>
-              </Typography>
-            )}
-          </Stack>
-        </form>
+          </Typography>
+        )}
+      </Stack>
+    </form>
+  )
+
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', px: 2, py: 4 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2.5, sm: 3 }, width: '100%', maxWidth: checkoutPlan ? 960 : 400 }}>
+        {checkoutPlan ? (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, .95fr) minmax(0, 1.05fr)' }, gap: { xs: 3, md: 4 }, alignItems: 'start' }}>
+            <PremiumPlanSummary plan={checkoutPlan} onPlanChange={changeCheckoutPlan} stage="login" />
+            {loginForm}
+          </Box>
+        ) : (
+          loginForm
+        )}
       </Paper>
     </Box>
   )

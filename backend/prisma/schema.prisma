@@ -19,13 +19,19 @@ enum UserRole {
   ADMIN
 }
 
-// Plan comercial. FOUNDER: cuentas previas al cobro y creadas por administración (límites clásicos);
-// TRIAL: prueba de 30 días; PREMIUM: suscripción de pago. plan_expires_at marca el fin de la prueba o
-// del período pagado; nulo = sin vencimiento.
+// Plan comercial. NONE: cuenta que debe completar el checkout; FOUNDER: cuentas previas al cobro o creadas
+// por administración; TRIAL: prueba de 30 días; PREMIUM: suscripción de pago. plan_expires_at marca el
+// fin de la prueba o del período pagado; nulo = sin vencimiento.
 enum UserPlan {
+  NONE
   TRIAL
   PREMIUM
   FOUNDER
+}
+
+enum CheckoutPlan {
+  MONTHLY
+  YEARLY
 }
 
 enum EmailTokenPurpose {
@@ -64,6 +70,7 @@ model User {
   role              UserRole           @default(USER)
   plan              UserPlan           @default(FOUNDER)
   planExpiresAt     DateTime?          @map("plan_expires_at")
+  pendingCheckoutPlan CheckoutPlan?    @map("pending_checkout_plan")
   // Cliente de Stripe de esta cuenta; nulo hasta el primer pago.
   stripeCustomerId  String?            @unique @map("stripe_customer_id") @db.VarChar(255)
   emailVerifiedAt   DateTime?          @map("email_verified_at")

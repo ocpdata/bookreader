@@ -7,8 +7,9 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { User, UserPlan, UserStatus } from '@prisma/client';
+import { CheckoutPlan, User, UserPlan, UserStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { MailService } from '../mail/mail.service';
 import { accountDeletedMessage, accountExistsMessage, passwordChangedMessage, resetPasswordMessage, verifyEmailMessage } from '../mail/templates';
@@ -21,6 +22,7 @@ import { HOUR_MS, SlidingWindowLimiter } from './rate-limiter';
 import { appUrl, registrationMode, TERMS_VERSION, TRIAL_DAYS } from './registration.config';
 import { RegisterDto } from './registration.dto';
 import { SessionService } from './session.service';
+import { billingConfigured } from '../billing/billing.service';
 
 const MAX_REGISTRATIONS_PER_IP_PER_HOUR = 10;
 const MAX_REQUESTS_PER_IP_PER_HOUR = 10;
@@ -88,6 +90,9 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
 
   async register(dto: RegisterDto, ip: string) {
     if (registrationMode() === 'closed') throw new ForbiddenException('El registro no está disponible por ahora');
+    if (dto.plan && !billingConfigured()) {
+      throw new ServiceUnavailableException('Los pagos no están disponibles por ahora');
+    }
     this.limitIp('register', ip, MAX_REGISTRATIONS_PER_IP_PER_HOUR);
     this.passwords.assertAcceptable(dto.password, { email: dto.email, name: dto.name });
 
@@ -109,6 +114,12 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
             status: UserStatus.PENDING,
             termsAcceptedAt: new Date(),
             termsVersion: TERMS_VERSION,
+            ...(dto.plan
+              ? {
+                  plan: UserPlan.NONE,
+                  pendingCheckoutPlan: dto.plan === 'monthly' ? CheckoutPlan.MONTHLY : CheckoutPlan.YEARLY,
+                }
+              : {}),
           },
         });
       });
@@ -143,18 +154,35 @@ export class RegistrationService implements OnModuleInit, OnModuleDestroy {
   async verifyEmail(token: string) {
     const consumed = await this.tokens.consume(token, 'VERIFY_EMAIL');
     if (!consumed) throw new BadRequestException(INVALID_LINK);
-    const user = await this.prisma.user.findUnique({ where: { id: consumed.userId }, select: { email: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: consumed.userId },
+      select: { email: true, pendingCheckoutPlan: true },
+    });
     // La prueba es una por correo y sobrevive al borrado de la cuenta: solo se guarda el hash de la dirección.
-    let planExpiresAt = new Date();
-    if (user?.email) {
-      const emailHash = createHash('sha256').update(user.email).digest('hex');
-      const claimed = await this.prisma.trialClaim.createMany({ data: [{ emailHash }], skipDuplicates: true });
-      if (claimed.count) planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 24 * HOUR_MS);
+    let planExpiresAt: Date | null = null;
+    if (!user?.pendingCheckoutPlan) {
+      planExpiresAt = new Date();
+      if (user?.email) {
+        const emailHash = createHash('sha256').update(user.email).digest('hex');
+        const claimed = await this.prisma.trialClaim.createMany({ data: [{ emailHash }], skipDuplicates: true });
+        if (claimed.count) planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 24 * HOUR_MS);
+      }
     }
     await this.prisma.user.updateMany({
       where: { id: consumed.userId, status: UserStatus.PENDING },
-      data: { status: UserStatus.ACTIVE, emailVerifiedAt: new Date(), plan: UserPlan.TRIAL, planExpiresAt },
+      data: {
+        status: UserStatus.ACTIVE,
+        emailVerifiedAt: new Date(),
+        ...(user?.pendingCheckoutPlan ? {} : { plan: UserPlan.TRIAL, planExpiresAt }),
+      },
     });
+    return {
+      checkoutPlan: user?.pendingCheckoutPlan === CheckoutPlan.MONTHLY
+        ? 'monthly'
+        : user?.pendingCheckoutPlan === CheckoutPlan.YEARLY
+          ? 'yearly'
+          : null,
+    };
   }
 
   async forgotPassword(email: string, ip: string) {

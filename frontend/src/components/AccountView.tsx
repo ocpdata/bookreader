@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -15,6 +15,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { changePassword, confirmCheckout, deleteAccount, getBillingConfig, getMobileConfig, getUsage, listDevices, openBillingPortal, revokeAllDevices, revokeDevice, startCheckout, type LinkedDevice, type Usage } from '../api'
 import { useAuth } from '../auth'
+import { PREMIUM_PRICING } from '../billing-plans'
 import { formatBytes } from '../format'
 
 const MIN_LENGTH = 12
@@ -99,11 +100,17 @@ function DeleteAccountSection() {
   )
 }
 
-const PLAN_LABEL = { TRIAL: 'Prueba gratuita', PREMIUM: 'Premium', FOUNDER: 'Cuenta fundadora' }
+const PLAN_LABEL: Record<Usage['plan'], string> = {
+  NONE: 'Sin plan',
+  TRIAL: 'Prueba gratuita',
+  PREMIUM: 'Premium',
+  FOUNDER: 'Cuenta fundadora',
+}
 
 /** Plan comercial de la cuenta: tipo, vencimiento, suscripción y gestión de pagos. */
 function PlanSection({ usage }: { usage: Usage }) {
   const [billingEnabled, setBillingEnabled] = useState(false)
+  const [billingError, setBillingError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const expires = usage.planExpiresAt ? new Date(usage.planExpiresAt) : null
@@ -112,7 +119,7 @@ function PlanSection({ usage }: { usage: Usage }) {
   useEffect(() => {
     getBillingConfig()
       .then((config) => setBillingEnabled(config.enabled))
-      .catch(() => undefined)
+      .catch(() => setBillingError(true))
   }, [])
 
   async function go(action: () => Promise<{ url: string }>) {
@@ -135,24 +142,31 @@ function PlanSection({ usage }: { usage: Usage }) {
         {PLAN_LABEL[usage.plan]}
         {expires && !usage.uploadsBlocked &&
           ` · termina el ${expires.toLocaleDateString('es', { dateStyle: 'medium' })} (${daysLeft} ${daysLeft === 1 ? 'día' : 'días'})`}
-        {!expires && usage.plan !== 'TRIAL' && ' · sin vencimiento'}
+        {usage.plan === 'FOUNDER' && ' · sin vencimiento'}
       </Typography>
+      {billingError && (
+        <Alert severity="error">No se pudo comprobar la disponibilidad de pagos. Recarga la página para intentarlo de nuevo.</Alert>
+      )}
       {usage.uploadsBlocked && (
         <Alert severity="warning">
-          {usage.plan === 'TRIAL'
-            ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios; suscríbete para volver a subir.'
-            : 'Tu plan venció. Puedes seguir escuchando y descargando tus audios; renueva para volver a subir.'}
+          {usage.plan === 'NONE'
+            ? 'Completa una suscripción Premium para empezar a subir audios.'
+            : usage.plan === 'TRIAL'
+              ? 'Tu prueba gratuita terminó. Puedes seguir escuchando y descargando tus audios; suscríbete para volver a subir.'
+              : 'Tu plan venció. Puedes seguir escuchando y descargando tus audios; renueva para volver a subir.'}
         </Alert>
       )}
       {billingEnabled && usage.plan !== 'FOUNDER' && (
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-          {usage.plan === 'TRIAL' && (
+          {(usage.plan === 'TRIAL' || usage.plan === 'NONE') && (
             <>
               <Button variant="contained" disabled={busy} onClick={() => void go(() => startCheckout('monthly'))}>
-                Suscribirme · MX$69/mes
+                {usage.plan === 'NONE' ? `Contratar · ${PREMIUM_PRICING.monthly.accountLabel}` : `Suscribirme · ${PREMIUM_PRICING.monthly.accountLabel}`}
               </Button>
               <Button variant="outlined" disabled={busy} onClick={() => void go(() => startCheckout('yearly'))}>
-                Plan anual · MX$690 (2 meses gratis)
+                {usage.plan === 'NONE'
+                  ? `Contratar anual · ${PREMIUM_PRICING.yearly.accountLabel}`
+                  : `Plan anual · ${PREMIUM_PRICING.yearly.accountLabel} (2 meses gratis)`}
               </Button>
             </>
           )}
@@ -172,7 +186,7 @@ function PlanSection({ usage }: { usage: Usage }) {
       )}
       {billingEnabled && usage.plan === 'TRIAL' && (
         <Typography variant="caption" color="text.secondary">
-          El pago lo procesa Stripe en pesos mexicanos (MX$69 ≈ US$4); desde otros países el banco convierte el cargo.
+          El pago lo procesa Stripe en pesos mexicanos ({PREMIUM_PRICING.monthly.amount} ≈ US$4); desde otros países el banco convierte el cargo.
         </Typography>
       )}
       {error && <Alert severity="error">{error}</Alert>}
@@ -185,6 +199,8 @@ function UsageSection() {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [params, setParams] = useSearchParams()
   const [paid, setPaid] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+  const checkoutStarted = useRef(false)
 
   useEffect(() => {
     const sessionId = params.get('session_id')
@@ -204,12 +220,32 @@ function UsageSection() {
       })
   }, [params, setParams])
 
+  useEffect(() => {
+    const checkoutPlan = params.get('checkout')
+    if (!usage || (checkoutPlan !== 'monthly' && checkoutPlan !== 'yearly')) return
+    const nextParams = new URLSearchParams(params)
+    nextParams.delete('checkout')
+    if (usage.plan !== 'NONE' && usage.plan !== 'TRIAL') {
+      setParams(nextParams, { replace: true })
+      return
+    }
+    if (checkoutStarted.current) return
+    checkoutStarted.current = true
+    startCheckout(checkoutPlan)
+      .then(({ url }) => window.location.assign(url))
+      .catch((error: Error) => {
+        setCheckoutError(error.message)
+        setParams(nextParams, { replace: true })
+      })
+  }, [params, setParams, usage])
+
   if (!usage) return null
   const percent = Math.min(100, (usage.usedBytes / usage.limitBytes) * 100)
   const nearlyFull = percent >= 90 || usage.audios >= usage.maxAudios
   return (
     <Stack spacing={3}>
       {paid && <Alert severity="success">¡Gracias! Tu suscripción está activa.</Alert>}
+      {checkoutError && <Alert severity="error">{checkoutError}</Alert>}
       <PlanSection usage={usage} />
       <Stack spacing={1}>
       <Typography variant="h6" component="h2">

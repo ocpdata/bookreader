@@ -1087,7 +1087,7 @@ describe('Summaries (e2e)', () => {
     const SIZE = fixture('sample.mp3').length;
     const api = () => request(app.getHttpServer());
     const usage = async (user = A) => (await api().get('/api/usage').set(as(user))).body;
-    const setQuota = (data: { storageLimitBytes?: bigint | null; maxAudios?: number | null; plan?: 'TRIAL' | 'PREMIUM' | 'FOUNDER'; planExpiresAt?: Date | null }, user = A) =>
+    const setQuota = (data: { storageLimitBytes?: bigint | null; maxAudios?: number | null; plan?: 'NONE' | 'TRIAL' | 'PREMIUM' | 'FOUNDER'; planExpiresAt?: Date | null }, user = A) =>
       prisma.user.update({ where: { id: user }, data });
 
     beforeEach(async () => {
@@ -1132,6 +1132,20 @@ describe('Summaries (e2e)', () => {
       expect(await usage()).toMatchObject({ limitBytes: 10 * 1024 ** 3, maxAudios: 500, plan: 'PREMIUM', uploadsBlocked: false });
       await setQuota({ maxAudios: 3 });
       expect(await usage()).toMatchObject({ maxAudios: 3 });
+    });
+
+    it('bloquea cargas de una cuenta que aún no ha contratado Premium', async () => {
+      await setQuota({ plan: 'NONE', planExpiresAt: null });
+      expect(await usage()).toMatchObject({
+        limitBytes: 2 * 1024 ** 3,
+        maxAudios: 25,
+        plan: 'NONE',
+        uploadsBlocked: true,
+      });
+      const blocked = await createSummary(A);
+      expect(blocked.status).toBe(402);
+      expect(blocked.body.message).toContain('Completa una suscripción Premium');
+      expect(await prisma.summary.count({ where: { userId: A } })).toBe(0);
     });
 
     it('rechaza el audio que no cabe en el almacenamiento, sin crear la fila ni la URL de carga', async () => {
