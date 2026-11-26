@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
+import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -11,6 +12,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Link from '@mui/material/Link'
 import LinearProgress from '@mui/material/LinearProgress'
+import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -20,6 +22,32 @@ import { PREMIUM_PRICING } from '../billing-plans'
 import { formatBytes } from '../format'
 
 const MIN_LENGTH = 12
+
+/** Tarjeta de una sección de la cuenta; `danger` resalta la zona de peligro. */
+function SectionCard({ children, danger = false }: { children: ReactNode; danger?: boolean }) {
+  return (
+    <Paper
+      variant="outlined"
+      component="section"
+      sx={{
+        p: { xs: 2.5, sm: 3 },
+        borderRadius: '16px',
+        boxShadow: '0 4px 20px rgba(23, 32, 51, 0.035)',
+        ...(danger ? { borderColor: 'error.light' } : {}),
+      }}
+    >
+      {children}
+    </Paper>
+  )
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
 
 const REAUTH_ERRORS: Record<string, string> = {
   cancelled: 'Cancelaste la confirmación con Google.',
@@ -196,7 +224,7 @@ function PlanSection({ usage }: { usage: Usage }) {
         </Alert>
       )}
       {billingEnabled && usage.plan !== 'FOUNDER' && (
-        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
           {(usage.plan === 'TRIAL' || usage.plan === 'NONE') && (
             <>
               <Button variant="contained" disabled={busy} onClick={() => void go(() => startCheckout('monthly'))}>
@@ -285,12 +313,15 @@ function UsageSection() {
     <Stack spacing={3}>
       {paid && <Alert severity="success">¡Gracias! Tu suscripción está activa.</Alert>}
       {checkoutError && <Alert severity="error">{checkoutError}</Alert>}
-      <PlanSection usage={usage} />
-      <Stack spacing={1}>
+      <SectionCard>
+        <PlanSection usage={usage} />
+      </SectionCard>
+      <SectionCard>
+      <Stack spacing={1.5}>
       <Typography variant="h6" component="h2">
         Almacenamiento
       </Typography>
-      <LinearProgress variant="determinate" value={percent} color={nearlyFull ? 'warning' : 'primary'} aria-label="Espacio usado" />
+      <LinearProgress variant="determinate" value={percent} color={nearlyFull ? 'warning' : 'primary'} aria-label="Espacio usado" sx={{ height: 10, borderRadius: 5 }} />
       <Typography variant="body2">
         Usas {formatBytes(usage.usedBytes)} de {formatBytes(usage.limitBytes)} · {usage.audios} de {usage.maxAudios} audios
       </Typography>
@@ -302,6 +333,7 @@ function UsageSection() {
       )}
       {nearlyFull && <Alert severity="warning">Estás cerca del límite de tu cuenta.</Alert>}
       </Stack>
+      </SectionCard>
     </Stack>
   )
 }
@@ -358,6 +390,7 @@ function MobileAppsSection() {
           ) : (
             <Alert severity="warning">No hay una dirección HTTPS para móviles configurada. Contacta al administrador del servicio.</Alert>
           )}
+          <Divider />
           <AppPasswordsSection />
           <Typography variant="body2" color="text.secondary">
             Puedes sincronizar tu progreso y, si la app lo permite, descargar audios. Para subir, editar o eliminar contenido,
@@ -573,70 +606,84 @@ export default function AccountView() {
   }
 
   return (
-    <Stack spacing={4} sx={{ maxWidth: 420 }}>
-      <form onSubmit={handleSubmit}>
-        <Stack spacing={2}>
+    <Stack spacing={3} sx={{ maxWidth: 1000, mx: 'auto' }}>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <Avatar sx={{ bgcolor: 'primary.main', width: 56, height: 56, fontWeight: 700 }}>{initials(user?.name ?? '') || '?'}</Avatar>
+        <Box sx={{ minWidth: 0 }}>
           <Typography variant="h5" component="h1">
             Mi cuenta
           </Typography>
-          <Typography color="text.secondary">
+          <Typography color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
             {user?.name} · {user?.email}
           </Typography>
-          {user?.hasPassword === false ? (
-            <Alert severity="info">
-              Entras con Google, por eso tu cuenta no tiene contraseña ni la necesita: en las apps móviles usa un código de
-              aplicación. Si aun así quieres tener una, créala con <Link component={RouterLink} to="/olvide">«Olvidé mi contraseña»</Link>.
-            </Alert>
-          ) : (
-            <>
-              <Typography variant="h6" component="h2">
-                Cambiar contraseña
-              </Typography>
-              {/* Campo oculto de usuario: los gestores de contraseñas lo usan para asociar la nueva. */}
-              <input type="text" name="username" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
-              <TextField
-                label="Contraseña actual"
-                type="password"
-                autoComplete="current-password"
-                value={current}
-                onChange={(e) => setCurrent(e.target.value)}
-                required
-              />
-              <TextField
-                label="Contraseña nueva"
-                type="password"
-                autoComplete="new-password"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                helperText={`Al menos ${MIN_LENGTH} caracteres.`}
-                required
-              />
-              <TextField
-                label="Repite la contraseña nueva"
-                type="password"
-                autoComplete="new-password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-              />
-              {error && <Alert severity="error">{error}</Alert>}
-              {done && <Alert severity="success">Contraseña actualizada. Se cerraron tus otras sesiones.</Alert>}
-              <Button type="submit" variant="contained" disabled={busy} sx={{ alignSelf: 'flex-start' }}>
-                Guardar contraseña
-              </Button>
-
-            </>
-          )}
+        </Box>
+      </Stack>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' }, gap: 3, alignItems: 'start' }}>
+        <Stack spacing={3}>
+          <UsageSection />
+          <SectionCard>
+            <form onSubmit={handleSubmit}>
+              <Stack spacing={2}>
+                <Typography variant="h6" component="h2">
+                  Contraseña
+                </Typography>
+                {user?.hasPassword === false ? (
+                  <Alert severity="info">
+                    Entras con Google, por eso tu cuenta no tiene contraseña ni la necesita: en las apps móviles usa un código de
+                    aplicación. Si aun así quieres tener una, créala con <Link component={RouterLink} to="/olvide">«Olvidé mi contraseña»</Link>.
+                  </Alert>
+                ) : (
+                  <>
+                    {/* Campo oculto de usuario: los gestores de contraseñas lo usan para asociar la nueva. */}
+                    <input type="text" name="username" autoComplete="username" value={user?.email ?? ''} readOnly hidden />
+                    <TextField
+                      label="Contraseña actual"
+                      type="password"
+                      autoComplete="current-password"
+                      value={current}
+                      onChange={(e) => setCurrent(e.target.value)}
+                      required
+                    />
+                    <TextField
+                      label="Contraseña nueva"
+                      type="password"
+                      autoComplete="new-password"
+                      value={next}
+                      onChange={(e) => setNext(e.target.value)}
+                      helperText={`Al menos ${MIN_LENGTH} caracteres.`}
+                      required
+                    />
+                    <TextField
+                      label="Repite la contraseña nueva"
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      required
+                    />
+                    {error && <Alert severity="error">{error}</Alert>}
+                    {done && <Alert severity="success">Contraseña actualizada. Se cerraron tus otras sesiones.</Alert>}
+                    <Button type="submit" variant="contained" disabled={busy} sx={{ alignSelf: 'flex-start' }}>
+                      Guardar contraseña
+                    </Button>
+                  </>
+                )}
+              </Stack>
+            </form>
+          </SectionCard>
         </Stack>
-      </form>
-      <Divider />
-      <UsageSection />
-      <Divider />
-      <MobileAppsSection />
-      <Divider />
-      <AppSessionsSection />
-      <Divider />
-      <DeleteAccountSection />
+        <Stack spacing={3}>
+          <SectionCard>
+            <MobileAppsSection />
+          </SectionCard>
+          <SectionCard>
+            <AppSessionsSection />
+          </SectionCard>
+          <SectionCard danger>
+            <DeleteAccountSection />
+          </SectionCard>
+        </Stack>
+      </Box>
     </Stack>
   )
 }
