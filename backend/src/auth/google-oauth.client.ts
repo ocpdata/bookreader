@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 export interface GoogleClaims {
   sub: string;
@@ -38,6 +38,8 @@ const decodePayload = (jwt: string): Record<string, unknown> | null => {
  */
 @Injectable()
 export class GoogleOAuthClient {
+  private readonly logger = new Logger(GoogleOAuthClient.name);
+
   async exchange(code: string, verifier: string, redirectUri: string, nonce: string): Promise<GoogleClaims> {
     const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -61,7 +63,12 @@ export class GoogleOAuthClient {
     } catch {
       throw new GoogleAuthError('unavailable');
     }
-    if (!response.ok) throw new GoogleAuthError('invalid');
+    if (!response.ok) {
+      const failure = (await response.json().catch(() => null)) as { error?: unknown; error_description?: unknown } | null;
+      // Es un fallo de configuración (credenciales) o de Google, no de la persona: se deja constancia sin datos sensibles.
+      this.logger.warn(`Google rechazó el intercambio del código (HTTP ${response.status}): ${String(failure?.error)} - ${String(failure?.error_description)}`);
+      throw new GoogleAuthError(failure?.error === 'invalid_client' ? 'unavailable' : 'invalid');
+    }
     const body = (await response.json().catch(() => null)) as { id_token?: unknown } | null;
     const claims = typeof body?.id_token === 'string' ? decodePayload(body.id_token) : null;
     if (!claims) throw new GoogleAuthError('invalid');
